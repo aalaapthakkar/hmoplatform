@@ -1,0 +1,278 @@
+import type {
+  owners,
+  properties,
+  propertyOwners,
+  rooms,
+  tenancies,
+  tenancyTenants,
+  tenants,
+} from "../schema";
+
+/**
+ * Demo data: one organisation with three HMOs and twelve rooms. Addresses
+ * are made up and have no UPRNs, so none points at a real home. Emails use
+ * the reserved example.com domain and phone numbers the Ofcom range set
+ * aside for drama. Fixed ids make the seed safe to run more than once.
+ */
+
+export const DEMO_ORG_ID = "d3e00000-0000-4000-8000-000000000001";
+export const DEMO_ORG_NAME = "Northern Rooms Ltd (demo)";
+
+const PROPERTY = {
+  manchester: "d3e00000-0000-4000-8001-000000000001",
+  leeds: "d3e00000-0000-4000-8001-000000000002",
+  nottingham: "d3e00000-0000-4000-8001-000000000003",
+} as const;
+
+const OWNER = {
+  ellison: "d3e00000-0000-4000-8002-000000000001",
+  trentside: "d3e00000-0000-4000-8002-000000000002",
+} as const;
+
+/** Deterministic id for the nth row of a kind, e.g. id(3, 12) for room 12. */
+const id = (kind: number, n: number) =>
+  `d3e00000-0000-4000-800${kind}-${String(n).padStart(12, "0")}`;
+
+/** Deposit capped at five weeks' rent, from monthly rent, rounded down to the penny. */
+const fiveWeeksDeposit = (monthlyRentPence: number) => Math.floor((monthlyRentPence * 12 * 5) / 52);
+
+type NewProperty = typeof properties.$inferInsert;
+type NewRoom = typeof rooms.$inferInsert;
+type NewTenant = typeof tenants.$inferInsert;
+type NewTenancy = typeof tenancies.$inferInsert;
+type NewTenancyTenant = typeof tenancyTenants.$inferInsert;
+type NewOwner = typeof owners.$inferInsert;
+type NewPropertyOwner = typeof propertyOwners.$inferInsert;
+
+const orgId = DEMO_ORG_ID;
+
+export const demoProperties: NewProperty[] = [
+  {
+    id: PROPERTY.manchester,
+    orgId,
+    addressLine1: "18 Copperfield Road",
+    addressLine2: "Fallowfield",
+    town: "Manchester",
+    postcode: "M14 6PZ",
+    council: "Manchester City Council",
+    propertyType: "house",
+    ownershipType: "owned",
+    tags: ["licensed HMO", "students"],
+  },
+  {
+    id: PROPERTY.leeds,
+    orgId,
+    addressLine1: "42 Ash Grove Terrace",
+    addressLine2: "Headingley",
+    town: "Leeds",
+    postcode: "LS6 3HD",
+    council: "Leeds City Council",
+    propertyType: "house",
+    ownershipType: "managed",
+    tags: ["licensed HMO", "professionals"],
+  },
+  {
+    id: PROPERTY.nottingham,
+    orgId,
+    addressLine1: "Flat 2, 11 Rothley Court",
+    addressLine2: "Lenton",
+    town: "Nottingham",
+    postcode: "NG7 1QS",
+    council: "Nottingham City Council",
+    propertyType: "flat",
+    ownershipType: "master_lease",
+    headRentPence: 165_000,
+    tags: ["professionals", "bills included"],
+  },
+];
+
+type RoomSpec = {
+  property: keyof typeof PROPERTY;
+  name: string;
+  rentPence: number;
+  sizeSqm: string;
+  features: string[];
+  status: NewRoom["status"];
+};
+
+const roomSpecs: RoomSpec[] = [
+  // Manchester: five-bed student house
+  {
+    property: "manchester",
+    name: "Room 1 (front, ground floor)",
+    rentPence: 59_500,
+    sizeSqm: "14.50",
+    features: ["double bed", "bay window", "desk"],
+    status: "let",
+  },
+  {
+    property: "manchester",
+    name: "Room 2 (rear, ground floor)",
+    rentPence: 52_500,
+    sizeSqm: "10.20",
+    features: ["double bed", "desk"],
+    status: "let",
+  },
+  {
+    property: "manchester",
+    name: "Room 3 (front, first floor)",
+    rentPence: 57_500,
+    sizeSqm: "12.80",
+    features: ["double bed", "en suite", "desk"],
+    status: "let",
+  },
+  {
+    property: "manchester",
+    name: "Room 4 (rear, first floor)",
+    rentPence: 49_500,
+    sizeSqm: "8.40",
+    features: ["small double bed", "desk"],
+    status: "available",
+  },
+  {
+    property: "manchester",
+    name: "Room 5 (attic)",
+    rentPence: 55_000,
+    sizeSqm: "11.60",
+    features: ["double bed", "skylight", "en suite"],
+    status: "let",
+  },
+  // Leeds: four-bed house for professionals, managed for an owner
+  {
+    property: "leeds",
+    name: "Room 1",
+    rentPence: 62_500,
+    sizeSqm: "13.10",
+    features: ["king size bed", "en suite", "wardrobe"],
+    status: "let",
+  },
+  {
+    property: "leeds",
+    name: "Room 2",
+    rentPence: 58_000,
+    sizeSqm: "11.40",
+    features: ["double bed", "wardrobe"],
+    status: "let",
+  },
+  {
+    property: "leeds",
+    name: "Room 3",
+    rentPence: 56_500,
+    sizeSqm: "10.70",
+    features: ["double bed", "desk"],
+    status: "available",
+  },
+  {
+    property: "leeds",
+    name: "Room 4",
+    rentPence: 52_000,
+    sizeSqm: "7.20",
+    features: ["single bed", "desk"],
+    status: "unavailable",
+  },
+  // Nottingham: three-bed flat on a master lease
+  {
+    property: "nottingham",
+    name: "Bedroom A",
+    rentPence: 69_500,
+    sizeSqm: "12.30",
+    features: ["double bed", "en suite", "balcony"],
+    status: "let",
+  },
+  {
+    property: "nottingham",
+    name: "Bedroom B",
+    rentPence: 64_500,
+    sizeSqm: "11.00",
+    features: ["double bed", "wardrobe"],
+    status: "let",
+  },
+  {
+    property: "nottingham",
+    name: "Bedroom C",
+    rentPence: 59_500,
+    sizeSqm: "9.10",
+    features: ["double bed", "desk"],
+    status: "available",
+  },
+];
+
+export const demoRooms: NewRoom[] = roomSpecs.map((room, index) => ({
+  id: id(3, index + 1),
+  orgId,
+  propertyId: PROPERTY[room.property],
+  name: room.name,
+  rentPence: room.rentPence,
+  rentFrequency: "monthly",
+  sizeSqm: room.sizeSqm,
+  features: room.features,
+  status: room.status,
+}));
+
+const tenantNames: [string, string][] = [
+  ["Priya", "Shah"],
+  ["Tom", "Walsh"],
+  ["Aisha", "Okafor"],
+  ["Callum", "Reid"],
+  ["Sophie", "Turner"],
+  ["Daniel", "Kowalski"],
+  ["Hannah", "Lewis"],
+  ["Marcus", "Bennett"],
+];
+
+export const demoTenants: NewTenant[] = tenantNames.map(([firstName, lastName], index) => ({
+  id: id(4, index + 1),
+  orgId,
+  firstName,
+  lastName,
+  email: `${firstName}.${lastName}@example.com`.toLowerCase(),
+  phone: `07700 900${String(101 + index)}`,
+}));
+
+const letRooms = demoRooms.filter((room) => room.status === "let");
+
+/** Students in Manchester are on 12-month fixed terms; everyone else is periodic. */
+export const demoTenancies: NewTenancy[] = letRooms.map((room, index) => {
+  const student = room.propertyId === PROPERTY.manchester;
+  return {
+    id: id(5, index + 1),
+    orgId,
+    roomId: room.id!,
+    startDate: student ? "2026-09-01" : "2026-04-15",
+    endDate: student ? "2027-08-31" : null,
+    status: "active",
+    rentPence: room.rentPence,
+    rentFrequency: "monthly",
+    rentDueDay: student ? 1 : 15,
+    depositPence: fiveWeeksDeposit(room.rentPence),
+  };
+});
+
+export const demoTenancyTenants: NewTenancyTenant[] = demoTenancies.map((tenancy, index) => ({
+  id: id(6, index + 1),
+  orgId,
+  tenancyId: tenancy.id!,
+  tenantId: demoTenants[index]!.id!,
+}));
+
+export const demoOwners: NewOwner[] = [
+  {
+    id: OWNER.ellison,
+    orgId,
+    name: "Margaret Ellison",
+    email: "margaret.ellison@example.com",
+    phone: "07700 900201",
+  },
+  {
+    id: OWNER.trentside,
+    orgId,
+    name: "Trentside Estates Ltd",
+    email: "lettings@trentside.example.com",
+    phone: "0115 496 0123",
+  },
+];
+
+export const demoPropertyOwners: NewPropertyOwner[] = [
+  { id: id(7, 1), orgId, propertyId: PROPERTY.leeds, ownerId: OWNER.ellison },
+  { id: id(7, 2), orgId, propertyId: PROPERTY.nottingham, ownerId: OWNER.trentside },
+];

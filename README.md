@@ -10,3 +10,4 @@ See [CLAUDE.md](./CLAUDE.md) for the stack, rules and commands.
 2. Copy `.env.example` to `.env.local` and fill in your Supabase values.
 3. Apply database migrations: `npm run db:migrate`
 4. Start the dev server: `npm run dev`, then open http://localhost:3000
+5. Optional demo data: sign up, then run `npm run db:seed -- --email you@example.com`

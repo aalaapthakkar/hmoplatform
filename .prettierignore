@@ -1,0 +1,12 @@
+.next
+out
+build
+coverage
+playwright-report
+test-results
+blob-report
+drizzle/migrations/meta
+package-lock.json
+next-env.d.ts
+CLAUDE.md
+AGENTS.md

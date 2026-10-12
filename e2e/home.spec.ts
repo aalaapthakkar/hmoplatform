@@ -1,6 +1,6 @@
 import { expect, test } from "@playwright/test";
 
-test("home page shows the product name", async ({ page }) => {
+test("signed-out visitors are sent to the log-in page", async ({ page }) => {
   await page.goto("/");
-  await expect(page.getByRole("heading", { name: "HMO Platform" })).toBeVisible();
+  await expect(page).toHaveURL(/\/log-in$/);
 });

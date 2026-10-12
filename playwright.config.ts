@@ -16,8 +16,15 @@ export default defineConfig({
   projects: [{ name: "chromium", use: { ...devices["Desktop Chrome"] } }],
   webServer: {
     command: `npm run build && npm run start -- --port ${port}`,
-    url: baseURL,
+    // A static file the proxy skips, so readiness never depends on auth redirects.
+    url: `${baseURL}/favicon.ico`,
     timeout: 240_000,
     reuseExistingServer: false,
+    // Dummy values: e2e tests never talk to a real Supabase project.
+    env: {
+      NEXT_PUBLIC_SUPABASE_URL: "http://127.0.0.1:54321",
+      NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: "e2e-dummy-key",
+      NEXT_PUBLIC_SITE_URL: baseURL,
+    },
   },
 });

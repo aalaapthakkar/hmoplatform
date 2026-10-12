@@ -28,4 +28,15 @@ A web app for UK HMO landlords, rent to rent operators and letting agents to man
 - If a requirement is unclear, ask me before guessing.
 
 ## Commands
-(fill in after the project is scaffolded)
+- Dev server: `npm run dev` (http://localhost:3000)
+- Build: `npm run build` (then `npm run start` to serve it)
+- Lint: `npm run lint`
+- Typecheck: `npm run typecheck`
+- Unit tests: `npm test` (watch mode: `npm run test:watch`)
+- End to end tests: `npm run test:e2e` (builds and serves on port 3217 with dummy Supabase values; first run needs `npx playwright install chromium`)
+- Format: `npm run format` (check only: `npm run format:check`)
+- Database: `npm run db:generate` to create a migration from src/db/schema, `npm run db:migrate` to apply migrations, `npm run db:studio` to browse. Hand-written SQL (policies, functions, triggers) goes in a custom migration: `npx drizzle-kit generate --custom --name <name>`.
+
+## Data access
+- App code reads and writes through the Supabase clients in src/lib/supabase, which use the signed-in user's session so RLS applies. Drizzle is for schema and migrations only: it connects as the postgres role and bypasses RLS.
+- Every new table needs RLS policies in a migration, a test in src/db/rls.test.ts, and matching types in src/lib/supabase/database.types.ts.

@@ -1,5 +1,10 @@
 import { expect, test } from "@playwright/test";
 
+test("the home page sends signed-out visitors to log in", async ({ page }) => {
+  await page.goto("/");
+  await expect(page).toHaveURL(/\/log-in$/);
+});
+
 test("signed-out visitors are sent to the log-in page", async ({ page }) => {
   await page.goto("/dashboard");
   await expect(page).toHaveURL(/\/log-in$/);
@@ -22,6 +27,11 @@ test("auth pages link to each other", async ({ page }) => {
   await page.getByRole("link", { name: "Log in" }).click();
   await page.getByRole("link", { name: "Forgotten your password?" }).click();
   await expect(page.getByRole("heading", { name: "Reset your password" })).toBeVisible();
+});
+
+test("onboarding requires a signed-in user", async ({ page }) => {
+  await page.goto("/onboarding");
+  await expect(page).toHaveURL(/\/log-in$/);
 });
 
 test("an expired email link shows a friendly message", async ({ page }) => {

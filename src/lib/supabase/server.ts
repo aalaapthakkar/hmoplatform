@@ -2,6 +2,7 @@ import "server-only";
 
 import { createServerClient } from "@supabase/ssr";
 import { cookies } from "next/headers";
+import { connection } from "next/server";
 import { getPublicEnv } from "@/lib/env";
 import type { Database } from "./database.types";
 
@@ -11,6 +12,9 @@ import type { Database } from "./database.types";
  * Create a new client per request; never share one.
  */
 export async function createClient() {
+  // Supabase reads the clock and the network, so it must run at request time,
+  // never during a (runtime) prerender.
+  await connection();
   const env = getPublicEnv();
   const cookieStore = await cookies();
 

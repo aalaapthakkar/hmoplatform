@@ -1,17 +1,9 @@
 import { index, pgEnum, pgTable, unique, uuid } from "drizzle-orm/pg-core";
-import { authUsers } from "drizzle-orm/supabase";
 import { timestamps } from "./_shared";
 import { organisations } from "./organisations";
+import { users } from "./users";
 
-export const membershipRole = pgEnum("membership_role", [
-  "org_admin",
-  "staff",
-  "applicant",
-  "tenant",
-  "guarantor",
-  "owner",
-  "supplier",
-]);
+export const membershipRole = pgEnum("membership_role", ["admin", "staff"]);
 
 export const membershipStatus = pgEnum("membership_status", ["invited", "active", "removed"]);
 
@@ -24,7 +16,7 @@ export const memberships = pgTable(
       .references(() => organisations.id, { onDelete: "restrict" }),
     userId: uuid("user_id")
       .notNull()
-      .references(() => authUsers.id, { onDelete: "restrict" }),
+      .references(() => users.id, { onDelete: "restrict" }),
     role: membershipRole("role").notNull(),
     status: membershipStatus("status").notNull().default("active"),
     ...timestamps,

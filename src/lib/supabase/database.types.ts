@@ -8,8 +8,7 @@
 export type Json = string | number | boolean | null | { [key: string]: Json | undefined } | Json[];
 
 type OrganisationStatus = "active" | "archived";
-type MembershipRole =
-  "org_admin" | "staff" | "applicant" | "tenant" | "guarantor" | "owner" | "supplier";
+type MembershipRole = "admin" | "staff";
 type MembershipStatus = "invited" | "active" | "removed";
 type AuditAction = "insert" | "update" | "delete";
 
@@ -33,6 +32,19 @@ export type Database = {
           updated_at?: string;
         };
         Update: Partial<Database["public"]["Tables"]["organisations"]["Insert"]>;
+        Relationships: [];
+      };
+      users: {
+        Row: {
+          id: string;
+          email: string | null;
+          full_name: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        // Created by a trigger on auth.users. Users may update only full_name.
+        Insert: { [_ in never]: never };
+        Update: { full_name?: string | null };
         Relationships: [];
       };
       memberships: {
@@ -61,6 +73,13 @@ export type Database = {
             columns: ["org_id"];
             isOneToOne: false;
             referencedRelation: "organisations";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "memberships_user_id_users_id_fk";
+            columns: ["user_id"];
+            isOneToOne: false;
+            referencedRelation: "users";
             referencedColumns: ["id"];
           },
         ];

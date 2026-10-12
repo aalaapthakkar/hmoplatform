@@ -29,6 +29,20 @@
       "when": 1791833800228,
       "tag": "0003_users_profiles",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1791834068047,
+      "tag": "0004_property_tables",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1791834083438,
+      "tag": "0005_business_rls",
+      "breakpoints": true
     }
   ]
 }

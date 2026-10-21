@@ -24,6 +24,22 @@ type LettingType = "house_share" | "single_let";
 type RoomStatus = "available" | "let" | "unavailable" | "archived";
 type TenancyStatus = "prospective" | "active" | "ending" | "ended" | "cancelled";
 type TenancyEndReason = "tenant_notice" | "surrender" | "possession" | "other";
+type OnboardingStepKind =
+  | "application_form"
+  | "right_to_rent"
+  | "referencing"
+  | "holding_deposit"
+  | "agreement"
+  | "deposit"
+  | "first_rent"
+  | "move_in"
+  | "custom";
+type OnboardingStatus = "in_progress" | "completed" | "withdrawn";
+type OnboardingStepStatus = "not_started" | "in_progress" | "done" | "skipped";
+type RightToRentMethod = "manual_documents" | "online_share_code" | "idsp";
+type RightToRentPermission = "unlimited" | "time_limited";
+type ReminderKind = "right_to_rent_follow_up" | "other";
+type ReminderStatus = "open" | "done" | "dismissed";
 type DocumentType =
   | "gas_safety"
   | "eicr"
@@ -34,7 +50,9 @@ type DocumentType =
   | "right_to_rent"
   | "deposit_certificate"
   | "inventory"
-  | "other";
+  | "other"
+  | "identity"
+  | "proof_of_income";
 
 export type Database = {
   __InternalSupabase: { PostgrestVersion: "13" };
@@ -529,6 +547,204 @@ export type Database = {
           },
         ];
       };
+      onboarding_templates: {
+        Row: {
+          id: string;
+          org_id: string;
+          name: string;
+          is_default: boolean;
+          status: RecordStatus;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          org_id: string;
+          name: string;
+          is_default?: boolean;
+          status?: RecordStatus;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: Partial<Database["public"]["Tables"]["onboarding_templates"]["Insert"]>;
+        Relationships: [];
+      };
+      onboarding_template_steps: {
+        Row: {
+          id: string;
+          org_id: string;
+          template_id: string;
+          position: number;
+          kind: OnboardingStepKind;
+          title: string;
+          applicant_title: string;
+          owner_is_applicant: boolean;
+          due_offset_days: number;
+          status: RecordStatus;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          org_id: string;
+          template_id: string;
+          position: number;
+          kind: OnboardingStepKind;
+          title: string;
+          applicant_title: string;
+          owner_is_applicant?: boolean;
+          due_offset_days?: number;
+          status?: RecordStatus;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: Partial<Database["public"]["Tables"]["onboarding_template_steps"]["Insert"]>;
+        Relationships: [];
+      };
+      onboardings: {
+        Row: {
+          id: string;
+          org_id: string;
+          room_id: string;
+          tenancy_id: string;
+          template_id: string;
+          status: OnboardingStatus;
+          application: Json;
+          application_submitted_at: string | null;
+          portal_token_hash: string | null;
+          portal_expires_at: string | null;
+          portal_revoked_at: string | null;
+          upload_key: string;
+          completed_at: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          org_id: string;
+          room_id: string;
+          tenancy_id: string;
+          template_id: string;
+          status?: OnboardingStatus;
+          application?: Json;
+          application_submitted_at?: string | null;
+          portal_token_hash?: string | null;
+          portal_expires_at?: string | null;
+          portal_revoked_at?: string | null;
+          upload_key?: string;
+          completed_at?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: Partial<Database["public"]["Tables"]["onboardings"]["Insert"]>;
+        Relationships: [];
+      };
+      onboarding_steps: {
+        Row: {
+          id: string;
+          org_id: string;
+          onboarding_id: string;
+          position: number;
+          kind: OnboardingStepKind;
+          title: string;
+          applicant_title: string;
+          status: OnboardingStepStatus;
+          owner_user_id: string | null;
+          owner_is_applicant: boolean;
+          due_date: string | null;
+          notes: string | null;
+          completed_at: string | null;
+          completed_by: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          org_id: string;
+          onboarding_id: string;
+          position: number;
+          kind: OnboardingStepKind;
+          title: string;
+          applicant_title: string;
+          status?: OnboardingStepStatus;
+          owner_user_id?: string | null;
+          owner_is_applicant?: boolean;
+          due_date?: string | null;
+          notes?: string | null;
+          completed_at?: string | null;
+          completed_by?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: Partial<Database["public"]["Tables"]["onboarding_steps"]["Insert"]>;
+        Relationships: [];
+      };
+      right_to_rent_checks: {
+        Row: {
+          id: string;
+          org_id: string;
+          tenant_id: string;
+          onboarding_id: string | null;
+          check_date: string;
+          method: RightToRentMethod;
+          permission: RightToRentPermission;
+          expiry_date: string | null;
+          notes: string | null;
+          checked_by: string | null;
+          status: RecordStatus;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          org_id: string;
+          tenant_id: string;
+          onboarding_id?: string | null;
+          check_date: string;
+          method: RightToRentMethod;
+          permission: RightToRentPermission;
+          expiry_date?: string | null;
+          notes?: string | null;
+          checked_by?: string | null;
+          status?: RecordStatus;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: Partial<Database["public"]["Tables"]["right_to_rent_checks"]["Insert"]>;
+        Relationships: [];
+      };
+      reminders: {
+        Row: {
+          id: string;
+          org_id: string;
+          kind: ReminderKind;
+          title: string;
+          due_date: string;
+          status: ReminderStatus;
+          tenant_id: string | null;
+          source_id: string | null;
+          completed_at: string | null;
+          completed_by: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          org_id: string;
+          kind: ReminderKind;
+          title: string;
+          due_date: string;
+          status?: ReminderStatus;
+          tenant_id?: string | null;
+          source_id?: string | null;
+          completed_at?: string | null;
+          completed_by?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: Partial<Database["public"]["Tables"]["reminders"]["Insert"]>;
+        Relationships: [];
+      };
     };
     Views: { [_ in never]: never };
     Functions: {
@@ -597,6 +813,52 @@ export type Database = {
       end_tenancy: { Args: { p_tenancy_id: string }; Returns: undefined };
       start_tenancy: { Args: { p_tenancy_id: string }; Returns: undefined };
       cancel_tenancy: { Args: { p_tenancy_id: string }; Returns: undefined };
+      start_onboarding: { Args: { p_tenancy_id: string }; Returns: string };
+      update_onboarding_step: {
+        Args: {
+          p_step_id: string;
+          p_status: OnboardingStepStatus;
+          p_owner_user_id: string | null;
+          p_owner_is_applicant: boolean;
+          p_due_date: string | null;
+          p_notes: string | null;
+        };
+        Returns: undefined;
+      };
+      set_portal_link: { Args: { p_onboarding_id: string; p_token_hash: string }; Returns: string };
+      revoke_portal_link: { Args: { p_onboarding_id: string }; Returns: undefined };
+      record_right_to_rent: {
+        Args: {
+          p_tenant_id: string;
+          p_onboarding_id: string | null;
+          p_check_date: string;
+          p_method: RightToRentMethod;
+          p_permission: RightToRentPermission;
+          p_expiry_date: string | null;
+          p_notes: string | null;
+        };
+        Returns: string;
+      };
+      change_move_in_date: {
+        Args: { p_tenancy_id: string; p_start_date: string };
+        Returns: undefined;
+      };
+      withdraw_onboarding: { Args: { p_onboarding_id: string }; Returns: undefined };
+      org_people: { Args: { p_org_id: string }; Returns: { id: string; name: string }[] };
+      portal_overview: { Args: { p_token: string }; Returns: Json };
+      portal_save_application: {
+        Args: { p_token: string; p_application: Json; p_submit: boolean };
+        Returns: undefined;
+      };
+      portal_record_document: {
+        Args: {
+          p_token: string;
+          p_path: string;
+          p_file_name: string;
+          p_document_type: DocumentType;
+        };
+        Returns: undefined;
+      };
       property_activity: {
         Args: { p_property_id: string; p_limit?: number };
         Returns: {
@@ -626,6 +888,13 @@ export type Database = {
       room_status: RoomStatus;
       tenancy_status: TenancyStatus;
       tenancy_end_reason: TenancyEndReason;
+      onboarding_step_kind: OnboardingStepKind;
+      onboarding_status: OnboardingStatus;
+      onboarding_step_status: OnboardingStepStatus;
+      right_to_rent_method: RightToRentMethod;
+      right_to_rent_permission: RightToRentPermission;
+      reminder_kind: ReminderKind;
+      reminder_status: ReminderStatus;
       document_type: DocumentType;
     };
     CompositeTypes: { [_ in never]: never };

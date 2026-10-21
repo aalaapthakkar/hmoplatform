@@ -16,6 +16,8 @@ export const DOCUMENT_TYPE_LABELS: Record<DocumentType, string> = {
   right_to_rent: "Right to rent check",
   deposit_certificate: "Deposit certificate",
   inventory: "Inventory",
+  identity: "Photo ID",
+  proof_of_income: "Proof of income",
   other: "Other",
 };
 

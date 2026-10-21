@@ -1,4 +1,5 @@
 // @vitest-environment node
+import { createHash, randomBytes, randomUUID } from "node:crypto";
 import { PGlite } from "@electric-sql/pglite";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import {
@@ -31,6 +32,12 @@ const BUSINESS_TABLES = [
   "owners",
   "property_owners",
   "documents",
+  "onboarding_templates",
+  "onboarding_template_steps",
+  "onboardings",
+  "onboarding_steps",
+  "right_to_rent_checks",
+  "reminders",
 ] as const;
 
 type BusinessTable = (typeof BUSINESS_TABLES)[number];
@@ -76,6 +83,30 @@ const INSERTS: Record<
     sql: "insert into public.documents (org_id, document_type, file_path, file_name, property_id) values ($1, 'gas_safety', $1::uuid::text || '/gas-safety.pdf', 'gas-safety.pdf', $2) returning id",
     params: [orgId, parents.properties],
   }),
+  onboarding_templates: (orgId) => ({
+    sql: "insert into public.onboarding_templates (org_id, name) values ($1, 'Test workflow') returning id",
+    params: [orgId],
+  }),
+  onboarding_template_steps: (orgId, parents) => ({
+    sql: "insert into public.onboarding_template_steps (org_id, template_id, position, kind, title, applicant_title) values ($1, $2, 100 + floor(random() * 30000)::int, 'custom', 'Step', 'Step') returning id",
+    params: [orgId, parents.onboarding_templates],
+  }),
+  onboardings: (orgId, parents) => ({
+    sql: "insert into public.onboardings (org_id, room_id, tenancy_id, template_id, status) values ($1, $2, $3, $4, 'completed') returning id",
+    params: [orgId, parents.rooms, parents.tenancies, parents.onboarding_templates],
+  }),
+  onboarding_steps: (orgId, parents) => ({
+    sql: "insert into public.onboarding_steps (org_id, onboarding_id, position, kind, title, applicant_title) values ($1, $2, 100 + floor(random() * 30000)::int, 'custom', 'Step', 'Step') returning id",
+    params: [orgId, parents.onboardings],
+  }),
+  right_to_rent_checks: (orgId, parents) => ({
+    sql: "insert into public.right_to_rent_checks (org_id, tenant_id, check_date, method, permission) values ($1, $2, '2026-08-01', 'manual_documents', 'unlimited') returning id",
+    params: [orgId, parents.tenants],
+  }),
+  reminders: (orgId, parents) => ({
+    sql: "insert into public.reminders (org_id, kind, title, due_date, tenant_id) values ($1, 'other', 'Test reminder', '2026-12-01', $2) returning id",
+    params: [orgId, parents.tenants],
+  }),
 };
 
 /** The business records each table's rows point at. */
@@ -88,6 +119,12 @@ const PARENTS: Record<BusinessTable, BusinessTable[]> = {
   owners: [],
   property_owners: ["properties", "owners"],
   documents: ["properties"],
+  onboarding_templates: [],
+  onboarding_template_steps: ["onboarding_templates"],
+  onboardings: ["rooms", "tenancies", "onboarding_templates"],
+  onboarding_steps: ["onboardings"],
+  right_to_rent_checks: ["tenants"],
+  reminders: ["tenants"],
 };
 
 let t: TestDatabase;
@@ -339,7 +376,9 @@ describe.each(BUSINESS_TABLES)("%s: org isolation", (table) => {
       const { rows } = await db.query<{ id: string; org_id: string }>(
         `select id, org_id from public.${table}`,
       );
-      expect(rows).toEqual([{ id: aliceIds[table], org_id: aliceOrg }]);
+      // Some tables also hold rows every org gets, such as the default onboarding workflow.
+      expect(rows.map((row) => row.id)).toContain(aliceIds[table]);
+      expect(rows.every((row) => row.org_id === aliceOrg)).toBe(true);
     });
   });
 
@@ -414,8 +453,11 @@ describe.each(BUSINESS_TABLES)("%s: org isolation", (table) => {
 
   it("gives staff the same access as admins", async () => {
     await t.asUser(CAROL, async () => {
-      const { rows } = await db.query<{ id: string }>(`select id from public.${table}`);
-      expect(rows).toEqual([{ id: aliceIds[table] }]);
+      const { rows } = await db.query<{ id: string; org_id: string }>(
+        `select id, org_id from public.${table}`,
+      );
+      expect(rows.map((row) => row.id)).toContain(aliceIds[table]);
+      expect(rows.every((row) => row.org_id === aliceOrg)).toBe(true);
       const update = await db.query(`update public.${table} set updated_at = now() where id = $1`, [
         aliceIds[table],
       ]);
@@ -1330,6 +1372,501 @@ describe("tenancies", () => {
         );
       }
     });
+  });
+});
+
+describe("onboarding", () => {
+  const today = todayInLondon();
+  const daysFromToday = (days: number) => {
+    const date = new Date(`${today}T00:00:00Z`);
+    date.setUTCDate(date.getUTCDate() + days);
+    return date.toISOString().slice(0, 10);
+  };
+  const hash = (token: string) => createHash("sha256").update(token).digest("hex");
+
+  type Setup = {
+    room: string;
+    tenancy: string;
+    tenant: string;
+    onboarding: string;
+    token: string;
+    folder: string;
+  };
+
+  /** A room with an upcoming tenancy, onboarding started and a live applicant link (committed). */
+  async function setUp(startInDays = 20): Promise<Setup> {
+    const token = randomBytes(32).toString("base64url");
+    return t.asUser(
+      ALICE,
+      async () => {
+        const room = (
+          await db.query<{ id: string }>(
+            "insert into public.rooms (org_id, property_id, name) values ($1, $2, 'Onboarding room') returning id",
+            [aliceOrg, aliceIds.properties],
+          )
+        ).rows[0]!.id;
+        const tenancy = (
+          await db.query<{ id: string }>(
+            "select public.create_tenancy($1, 'Ava', 'Applicant', 'ava@example.test', null, $2, 55000, 'monthly', 1, 0) as id",
+            [room, daysFromToday(startInDays)],
+          )
+        ).rows[0]!.id;
+        const tenant = (
+          await db.query<{ tenant_id: string }>(
+            "select tenant_id from public.tenancy_tenants where tenancy_id = $1",
+            [tenancy],
+          )
+        ).rows[0]!.tenant_id;
+        const onboarding = (
+          await db.query<{ id: string }>("select public.start_onboarding($1) as id", [tenancy])
+        ).rows[0]!.id;
+        await db.query("select public.set_portal_link($1, $2)", [onboarding, hash(token)]);
+        const { rows } = await db.query<{ folder: string }>(
+          "select org_id::text || '/applicants/' || upload_key::text || '/' as folder from public.onboardings where id = $1",
+          [onboarding],
+        );
+        return { room, tenancy, tenant, onboarding, token, folder: rows[0]!.folder };
+      },
+      true,
+    );
+  }
+
+  async function steps(onboarding: string) {
+    const { rows } = await db.query<{
+      id: string;
+      kind: string;
+      status: string;
+      due_date: string;
+      owner_is_applicant: boolean;
+      owner_user_id: string | null;
+    }>(
+      "select id, kind, status, to_char(due_date, 'YYYY-MM-DD') as due_date, owner_is_applicant, owner_user_id from public.onboarding_steps where onboarding_id = $1 order by position",
+      [onboarding],
+    );
+    return rows;
+  }
+
+  const setStep = (step: string, status: string) =>
+    db.query("select public.update_onboarding_step($1, $2, null, false, null, null)", [
+      step,
+      status,
+    ]);
+
+  it("gives every organisation a default eight-step workflow", async () => {
+    for (const org of [aliceOrg, bobOrg]) {
+      const { rows } = await db.query<{ kind: string }>(
+        `select s.kind from public.onboarding_template_steps s
+         join public.onboarding_templates tpl on tpl.id = s.template_id
+         where tpl.org_id = $1 and tpl.is_default order by s.position`,
+        [org],
+      );
+      expect(rows.map((row) => row.kind)).toEqual([
+        "application_form",
+        "right_to_rent",
+        "referencing",
+        "holding_deposit",
+        "agreement",
+        "deposit",
+        "first_rent",
+        "move_in",
+      ]);
+    }
+  });
+
+  it("copies the steps into a new onboarding, with due dates counted back from move-in", async () => {
+    const { onboarding } = await setUp(20);
+    const rows = await t.asUser(ALICE, () => steps(onboarding));
+    expect(rows).toHaveLength(8);
+    expect(rows.map((row) => row.due_date)).toEqual(
+      [-14, -10, -7, -7, -5, -3, -1, 0].map((offset) => daysFromToday(20 + offset)),
+    );
+    expect(rows[0]).toMatchObject({ owner_is_applicant: true, owner_user_id: null });
+    expect(rows[1]).toMatchObject({ owner_is_applicant: false, owner_user_id: ALICE });
+  });
+
+  it("never sets a due date in the past", async () => {
+    const { onboarding } = await setUp(3);
+    const rows = await t.asUser(ALICE, () => steps(onboarding));
+    expect(rows.every((row) => row.due_date >= today)).toBe(true);
+  });
+
+  it("starts only for upcoming tenancies, once at a time", async () => {
+    const { tenancy } = await setUp();
+    await expect(
+      t.asUser(ALICE, () => db.query("select public.start_onboarding($1)", [tenancy])),
+    ).rejects.toThrow(/already has an onboarding in progress/);
+    await expect(
+      t.asUser(ALICE, () => db.query("select public.start_onboarding($1)", [aliceIds.tenancies])),
+    ).rejects.toThrow(/for upcoming tenancies/);
+    await expect(
+      t.asUser(BOB, () => db.query("select public.start_onboarding($1)", [tenancy])),
+    ).rejects.toThrow(/Tenancy not found/);
+  });
+
+  it("moves in only after the other steps, starting the tenancy and completing the onboarding", async () => {
+    const { onboarding, tenancy, room } = await setUp(10);
+    await t.asUser(ALICE, async () => {
+      const all = await steps(onboarding);
+      const moveIn = all.find((step) => step.kind === "move_in")!;
+      await db.query("savepoint s");
+      await expect(setStep(moveIn.id, "done")).rejects.toThrow(/Finish or skip the other steps/);
+      await db.query("rollback to savepoint s");
+
+      for (const step of all.filter((step) => step.kind !== "move_in")) {
+        await setStep(step.id, step.kind === "referencing" ? "skipped" : "done");
+      }
+      // The move-in date slips to today, so the tenant can move in.
+      await db.query("select public.change_move_in_date($1, $2)", [tenancy, today]);
+      await setStep(moveIn.id, "done");
+
+      const result = await db.query(
+        `select o.status as onboarding, t.status as tenancy, r.status as room
+         from public.onboardings o join public.tenancies t on t.id = o.tenancy_id
+         join public.rooms r on r.id = o.room_id where o.id = $1`,
+        [onboarding],
+      );
+      expect(result.rows).toEqual([{ onboarding: "completed", tenancy: "active", room: "let" }]);
+      expect(room).toBeDefined();
+
+      const done = await db.query(
+        "select count(*)::int as n from public.onboarding_steps where onboarding_id = $1 and completed_by = $2",
+        [onboarding, ALICE],
+      );
+      expect(done.rows).toEqual([{ n: 7 }]);
+    });
+  });
+
+  it("only gives steps to people in the organisation", async () => {
+    const { onboarding } = await setUp();
+    await expect(
+      t.asUser(ALICE, async () => {
+        const [first] = await steps(onboarding);
+        await db.query(
+          "select public.update_onboarding_step($1, 'in_progress', $2, false, null, null)",
+          [first!.id, BOB],
+        );
+      }),
+    ).rejects.toThrow(/Choose someone in your organisation/);
+  });
+
+  it("lists the organisation's active people for choosing an owner", async () => {
+    const mine = await t.asUser(CAROL, async () => {
+      const { rows } = await db.query<{ id: string }>("select id from public.org_people($1)", [
+        aliceOrg,
+      ]);
+      return rows.map((row) => row.id).sort();
+    });
+    expect(mine).toEqual([ALICE, CAROL].sort());
+    const theirs = await t.asUser(BOB, async () => {
+      const { rows } = await db.query("select id from public.org_people($1)", [aliceOrg]);
+      return rows;
+    });
+    expect(theirs).toEqual([]);
+  });
+
+  describe("applicant portal", () => {
+    const overview = (token: string) =>
+      t.asAnon(async () => {
+        const { rows } = await db.query<{ overview: Record<string, unknown> }>(
+          "select public.portal_overview($1) as overview",
+          [token],
+        );
+        return rows[0]!.overview;
+      });
+
+    it("shows the applicant their onboarding with the right link, and nothing with a wrong one", async () => {
+      const { token, folder } = await setUp();
+      const view = await overview(token);
+      expect(view).toMatchObject({
+        firstName: "Ava",
+        room: "Onboarding room",
+        uploadFolder: folder,
+        application: {},
+        submittedAt: null,
+      });
+      expect((view.steps as unknown[]).length).toBe(8);
+      expect((view.steps as { title: string; yours: boolean }[])[0]).toEqual({
+        title: "Fill in your application",
+        status: "not_started",
+        yours: true,
+      });
+      await expect(overview(randomBytes(32).toString("base64url"))).rejects.toThrow(
+        /isn't valid any more/,
+      );
+      await expect(overview("short")).rejects.toThrow(/isn't valid any more/);
+    });
+
+    it("stops working when the link is revoked, replaced or expired", async () => {
+      const revoked = await setUp();
+      await t.asUser(
+        ALICE,
+        () => db.query("select public.revoke_portal_link($1)", [revoked.onboarding]),
+        true,
+      );
+      await expect(overview(revoked.token)).rejects.toThrow(/isn't valid any more/);
+
+      const replaced = await setUp();
+      await t.asUser(
+        ALICE,
+        () =>
+          db.query("select public.set_portal_link($1, $2)", [
+            replaced.onboarding,
+            hash("a-brand-new-token-value-here"),
+          ]),
+        true,
+      );
+      await expect(overview(replaced.token)).rejects.toThrow(/isn't valid any more/);
+      await expect(overview("a-brand-new-token-value-here")).resolves.toMatchObject({
+        firstName: "Ava",
+      });
+
+      const expired = await setUp();
+      await db.query(
+        "update public.onboardings set portal_expires_at = now() - interval '1 minute' where id = $1",
+        [expired.onboarding],
+      );
+      await expect(overview(expired.token)).rejects.toThrow(/isn't valid any more/);
+    });
+
+    it("saves a draft, then the submitted application, which can't change afterwards", async () => {
+      const { token, onboarding } = await setUp();
+      const save = (application: object, submit: boolean) =>
+        t.asAnon(() =>
+          db.query("select public.portal_save_application($1, $2, $3)", [
+            token,
+            application,
+            submit,
+          ]),
+        );
+      // asAnon rolls back, so commit through a definer-style direct call instead.
+      await t.db.query("begin");
+      await t.db.query("set local role anon");
+      await t.db.query("select public.portal_save_application($1, $2, false)", [
+        token,
+        { legalName: "Ava A" },
+      ]);
+      await t.db.query("commit");
+      let view = await overview(token);
+      expect(view.application).toEqual({ legalName: "Ava A" });
+      expect((view.steps as { status: string }[])[0]!.status).toBe("in_progress");
+
+      await t.db.query("begin");
+      await t.db.query("set local role anon");
+      await t.db.query("select public.portal_save_application($1, $2, true)", [
+        token,
+        { legalName: "Ava Applicant" },
+      ]);
+      await t.db.query("commit");
+      view = await overview(token);
+      expect(view.submittedAt).not.toBeNull();
+      expect((view.steps as { status: string }[])[0]!.status).toBe("done");
+      await expect(save({ legalName: "Changed" }, true)).rejects.toThrow(
+        /already sent your application/,
+      );
+
+      const staffView = await t.asUser(ALICE, async () => {
+        const { rows } = await db.query(
+          "select application from public.onboardings where id = $1",
+          [onboarding],
+        );
+        return rows;
+      });
+      expect(staffView).toEqual([{ application: { legalName: "Ava Applicant" } }]);
+    });
+
+    it("lets the applicant upload only into their own folder, and never read files", async () => {
+      const mine = await setUp();
+      const other = await setUp();
+      const upload = (path: string) =>
+        t.asAnon(() =>
+          db.query("insert into storage.objects (bucket_id, name) values ('documents', $1)", [
+            path,
+          ]),
+        );
+      await expect(upload(`${mine.folder}passport.pdf`)).resolves.toBeDefined();
+      await expect(upload(`${mine.folder}nested/passport.pdf`)).rejects.toThrow(
+        /row-level security/,
+      );
+      await expect(upload(`${aliceOrg}/properties/x/passport.pdf`)).rejects.toThrow(
+        /row-level security/,
+      );
+      await expect(upload(`${aliceOrg}/applicants/${randomUUID()}/passport.pdf`)).rejects.toThrow(
+        /row-level security/,
+      );
+
+      await t.asUser(
+        ALICE,
+        () => db.query("select public.withdraw_onboarding($1)", [other.onboarding]),
+        true,
+      );
+      await expect(upload(`${other.folder}passport.pdf`)).rejects.toThrow(/row-level security/);
+
+      const seen = await t.asAnon(
+        async () => (await db.query("select name from storage.objects")).rows,
+      );
+      expect(seen).toEqual([]);
+    });
+
+    it("records an uploaded document against the tenant, and refuses files outside the folder", async () => {
+      const { token, folder, tenant, onboarding } = await setUp();
+      const path = `${folder}${randomUUID()}-passport.pdf`;
+      await db.query("insert into storage.objects (bucket_id, name) values ('documents', $1)", [
+        path,
+      ]);
+      const record = (filePath: string, type = "identity") =>
+        t.db
+          .query("begin")
+          .then(() => t.db.query("set local role anon"))
+          .then(() =>
+            t.db.query("select public.portal_record_document($1, $2, 'passport.pdf', $3)", [
+              token,
+              filePath,
+              type,
+            ]),
+          )
+          .then(
+            () => t.db.query("commit"),
+            async (error) => {
+              await t.db.query("rollback");
+              throw error;
+            },
+          );
+
+      await expect(record(`${folder}missing.pdf`)).rejects.toThrow(/couldn't find that file/);
+      await expect(record(`${aliceOrg}/properties/x/passport.pdf`)).rejects.toThrow(
+        /isn't in your folder/,
+      );
+      await expect(record(path, "gas_safety")).rejects.toThrow(/can't be uploaded here/);
+      await record(path);
+
+      const view = await overview(token);
+      expect(view.documents).toEqual([
+        expect.objectContaining({ fileName: "passport.pdf", type: "identity" }),
+      ]);
+      const staff = await t.asUser(ALICE, async () => {
+        const docs = await db.query(
+          "select tenant_id, uploaded_by from public.documents where file_path = $1",
+          [path],
+        );
+        const check = await db.query(
+          "select status from public.onboarding_steps where onboarding_id = $1 and kind = 'right_to_rent'",
+          [onboarding],
+        );
+        return { docs: docs.rows, check: check.rows };
+      });
+      expect(staff).toEqual({
+        docs: [{ tenant_id: tenant, uploaded_by: null }],
+        check: [{ status: "in_progress" }],
+      });
+    });
+
+    it("gives signed-out visitors nothing else", async () => {
+      const { tenancy } = await setUp();
+      for (const statement of [
+        "select * from public.onboardings",
+        "select * from public.onboarding_steps",
+        "select * from public.reminders",
+      ]) {
+        await expect(t.asAnon(() => db.query(statement))).rejects.toThrow(/permission denied/);
+      }
+      await expect(
+        t.asAnon(() => db.query("select public.start_onboarding($1)", [tenancy])),
+      ).rejects.toThrow(/permission denied/);
+      await expect(
+        t.asAnon(() => db.query("select private.is_org_member($1)", [aliceOrg])),
+      ).rejects.toThrow(/permission denied/);
+    });
+  });
+
+  describe("right to rent", () => {
+    const record = (
+      tenant: string,
+      onboarding: string | null,
+      permission: string,
+      expiry: string | null,
+      checkDate = today,
+    ) =>
+      db.query(
+        "select public.record_right_to_rent($1, $2, $3, 'online_share_code', $4, $5, null) as id",
+        [tenant, onboarding, checkDate, permission, expiry],
+      );
+
+    it("creates a reminder four weeks before time-limited permission ends, and completes the step", async () => {
+      const { tenant, onboarding } = await setUp();
+      const expiry = daysFromToday(200);
+      await t.asUser(ALICE, async () => {
+        await record(tenant, onboarding, "time_limited", expiry);
+        const reminders = await db.query<{ due_date: string; title: string }>(
+          "select to_char(due_date, 'YYYY-MM-DD') as due_date, title from public.reminders where tenant_id = $1",
+          [tenant],
+        );
+        expect(reminders.rows).toEqual([
+          {
+            due_date: daysFromToday(172),
+            title: `Right to rent follow-up check for Ava Applicant (permission ends ${expiry.split("-").reverse().join("/")})`,
+          },
+        ]);
+        const step = await db.query(
+          "select status, completed_by from public.onboarding_steps where onboarding_id = $1 and kind = 'right_to_rent'",
+          [onboarding],
+        );
+        expect(step.rows).toEqual([{ status: "done", completed_by: ALICE }]);
+      });
+    });
+
+    it("needs an expiry date only for time-limited permission, and no reminder otherwise", async () => {
+      const { tenant } = await setUp();
+      await expect(
+        t.asUser(ALICE, () => record(tenant, null, "time_limited", null)),
+      ).rejects.toThrow(/right_to_rent_checks_expiry_for_time_limited/);
+      await t.asUser(ALICE, async () => {
+        await record(tenant, null, "unlimited", daysFromToday(100));
+        const { rows } = await db.query(
+          "select expiry_date from public.right_to_rent_checks where tenant_id = $1",
+          [tenant],
+        );
+        expect(rows).toEqual([{ expiry_date: null }]);
+        const reminders = await db.query("select id from public.reminders where tenant_id = $1", [
+          tenant,
+        ]);
+        expect(reminders.rows).toEqual([]);
+      });
+      await expect(
+        t.asUser(ALICE, () => record(tenant, null, "unlimited", null, daysFromToday(1))),
+      ).rejects.toThrow(/can't be in the future/);
+    });
+  });
+
+  it("changes an upcoming move-in date, but not to the past", async () => {
+    const { tenancy } = await setUp();
+    await expect(
+      t.asUser(ALICE, () =>
+        db.query("select public.change_move_in_date($1, $2)", [tenancy, daysFromToday(-1)]),
+      ),
+    ).rejects.toThrow(/today or a later date/);
+    await t.asUser(ALICE, async () => {
+      await db.query("select public.change_move_in_date($1, $2)", [tenancy, daysFromToday(40)]);
+      const { rows } = await db.query<{ start_date: string }>(
+        "select to_char(start_date, 'YYYY-MM-DD') as start_date from public.tenancies where id = $1",
+        [tenancy],
+      );
+      expect(rows).toEqual([{ start_date: daysFromToday(40) }]);
+    });
+  });
+
+  it("withdraws an onboarding and switches its link off", async () => {
+    const { onboarding, token } = await setUp();
+    await t.asUser(
+      ALICE,
+      () => db.query("select public.withdraw_onboarding($1)", [onboarding]),
+      true,
+    );
+    await expect(
+      t.asAnon(() => db.query("select public.portal_overview($1)", [token])),
+    ).rejects.toThrow(/isn't valid any more/);
+    await expect(
+      t.asUser(ALICE, () => db.query("select public.withdraw_onboarding($1)", [onboarding])),
+    ).rejects.toThrow(/Only an onboarding in progress/);
   });
 });
 

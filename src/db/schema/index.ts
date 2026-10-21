@@ -11,3 +11,6 @@ export * from "./tenancy-tenants";
 export * from "./owners";
 export * from "./property-owners";
 export * from "./documents";
+export * from "./onboarding";
+export * from "./right-to-rent";
+export * from "./reminders";

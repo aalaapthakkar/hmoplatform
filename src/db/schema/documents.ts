@@ -21,6 +21,8 @@ export const documentType = pgEnum("document_type", [
   "deposit_certificate",
   "inventory",
   "other",
+  "identity",
+  "proof_of_income",
 ]);
 
 /**

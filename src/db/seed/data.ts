@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import type {
   owners,
   properties,
@@ -9,29 +10,22 @@ import type {
 } from "../schema";
 
 /**
- * Demo data: one organisation with three HMOs and twelve rooms. Addresses
- * are made up and have no UPRNs, so none points at a real home. Emails use
- * the reserved example.com domain and phone numbers the Ofcom range set
- * aside for drama. Fixed ids make the seed safe to run more than once.
+ * Demo data: three HMOs and twelve rooms, built for any organisation.
+ * Addresses are made up and have no UPRNs, so none points at a real home.
+ * Emails use the reserved example.com domain and phone numbers the Ofcom
+ * range set aside for drama. Ids are derived from the org id, so seeding the
+ * same org again changes nothing and two orgs' demo rows never collide.
  */
 
 export const DEMO_ORG_ID = "d3e00000-0000-4000-8000-000000000001";
 export const DEMO_ORG_NAME = "Northern Rooms Ltd (demo)";
 
-const PROPERTY = {
-  manchester: "d3e00000-0000-4000-8001-000000000001",
-  leeds: "d3e00000-0000-4000-8001-000000000002",
-  nottingham: "d3e00000-0000-4000-8001-000000000003",
-} as const;
-
-const OWNER = {
-  ellison: "d3e00000-0000-4000-8002-000000000001",
-  trentside: "d3e00000-0000-4000-8002-000000000002",
-} as const;
-
-/** Deterministic id for the nth row of a kind, e.g. id(3, 12) for room 12. */
-const id = (kind: number, n: number) =>
-  `d3e00000-0000-4000-800${kind}-${String(n).padStart(12, "0")}`;
+/** A stable, UUID-shaped id for one demo row in one org, e.g. demoId(org, "room", 12). */
+export function demoId(orgId: string, kind: string, n: number): string {
+  const hex = createHash("sha256").update(`hmo-demo/${orgId}/${kind}/${n}`).digest("hex");
+  const variant = ((parseInt(hex[16]!, 16) & 0x3) | 0x8).toString(16);
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-4${hex.slice(13, 16)}-${variant}${hex.slice(17, 20)}-${hex.slice(20, 32)}`;
+}
 
 /** Deposit capped at five weeks' rent, from monthly rent, rounded down to the penny. */
 const fiveWeeksDeposit = (monthlyRentPence: number) => Math.floor((monthlyRentPence * 12 * 5) / 52);
@@ -44,12 +38,12 @@ type NewTenancyTenant = typeof tenancyTenants.$inferInsert;
 type NewOwner = typeof owners.$inferInsert;
 type NewPropertyOwner = typeof propertyOwners.$inferInsert;
 
-const orgId = DEMO_ORG_ID;
+type PropertyKey = "manchester" | "leeds" | "nottingham";
+type OwnerKey = "ellison" | "trentside";
 
-export const demoProperties: NewProperty[] = [
+const propertySpecs: (Omit<NewProperty, "id" | "orgId"> & { key: PropertyKey })[] = [
   {
-    id: PROPERTY.manchester,
-    orgId,
+    key: "manchester",
     addressLine1: "18 Copperfield Road",
     addressLine2: "Fallowfield",
     town: "Manchester",
@@ -60,8 +54,7 @@ export const demoProperties: NewProperty[] = [
     tags: ["licensed HMO", "students"],
   },
   {
-    id: PROPERTY.leeds,
-    orgId,
+    key: "leeds",
     addressLine1: "42 Ash Grove Terrace",
     addressLine2: "Headingley",
     town: "Leeds",
@@ -72,8 +65,7 @@ export const demoProperties: NewProperty[] = [
     tags: ["licensed HMO", "professionals"],
   },
   {
-    id: PROPERTY.nottingham,
-    orgId,
+    key: "nottingham",
     addressLine1: "Flat 2, 11 Rothley Court",
     addressLine2: "Lenton",
     town: "Nottingham",
@@ -87,7 +79,7 @@ export const demoProperties: NewProperty[] = [
 ];
 
 type RoomSpec = {
-  property: keyof typeof PROPERTY;
+  property: PropertyKey;
   name: string;
   rentPence: number;
   sizeSqm: string;
@@ -197,18 +189,6 @@ const roomSpecs: RoomSpec[] = [
   },
 ];
 
-export const demoRooms: NewRoom[] = roomSpecs.map((room, index) => ({
-  id: id(3, index + 1),
-  orgId,
-  propertyId: PROPERTY[room.property],
-  name: room.name,
-  rentPence: room.rentPence,
-  rentFrequency: "monthly",
-  sizeSqm: room.sizeSqm,
-  features: room.features,
-  status: room.status,
-}));
-
 const tenantNames: [string, string][] = [
   ["Priya", "Shah"],
   ["Tom", "Walsh"],
@@ -220,59 +200,108 @@ const tenantNames: [string, string][] = [
   ["Marcus", "Bennett"],
 ];
 
-export const demoTenants: NewTenant[] = tenantNames.map(([firstName, lastName], index) => ({
-  id: id(4, index + 1),
-  orgId,
-  firstName,
-  lastName,
-  email: `${firstName}.${lastName}@example.com`.toLowerCase(),
-  phone: `07700 900${String(101 + index)}`,
-}));
-
-const letRooms = demoRooms.filter((room) => room.status === "let");
-
-/** Students in Manchester are on 12-month fixed terms; everyone else is periodic. */
-export const demoTenancies: NewTenancy[] = letRooms.map((room, index) => {
-  const student = room.propertyId === PROPERTY.manchester;
-  return {
-    id: id(5, index + 1),
-    orgId,
-    roomId: room.id!,
-    startDate: student ? "2026-09-01" : "2026-04-15",
-    endDate: student ? "2027-08-31" : null,
-    status: "active",
-    rentPence: room.rentPence,
-    rentFrequency: "monthly",
-    rentDueDay: student ? 1 : 15,
-    depositPence: fiveWeeksDeposit(room.rentPence),
-  };
-});
-
-export const demoTenancyTenants: NewTenancyTenant[] = demoTenancies.map((tenancy, index) => ({
-  id: id(6, index + 1),
-  orgId,
-  tenancyId: tenancy.id!,
-  tenantId: demoTenants[index]!.id!,
-}));
-
-export const demoOwners: NewOwner[] = [
+const ownerSpecs: (Omit<NewOwner, "id" | "orgId"> & { key: OwnerKey })[] = [
   {
-    id: OWNER.ellison,
-    orgId,
+    key: "ellison",
     name: "Margaret Ellison",
     email: "margaret.ellison@example.com",
     phone: "07700 900201",
   },
   {
-    id: OWNER.trentside,
-    orgId,
+    key: "trentside",
     name: "Trentside Estates Ltd",
     email: "lettings@trentside.example.com",
     phone: "0115 496 0123",
   },
 ];
 
-export const demoPropertyOwners: NewPropertyOwner[] = [
-  { id: id(7, 1), orgId, propertyId: PROPERTY.leeds, ownerId: OWNER.ellison },
-  { id: id(7, 2), orgId, propertyId: PROPERTY.nottingham, ownerId: OWNER.trentside },
+const propertyOwnerSpecs: { property: PropertyKey; owner: OwnerKey }[] = [
+  { property: "leeds", owner: "ellison" },
+  { property: "nottingham", owner: "trentside" },
 ];
+
+export type DemoData = {
+  properties: NewProperty[];
+  rooms: NewRoom[];
+  tenants: NewTenant[];
+  tenancies: NewTenancy[];
+  tenancyTenants: NewTenancyTenant[];
+  owners: NewOwner[];
+  propertyOwners: NewPropertyOwner[];
+};
+
+/** All the demo rows for one organisation. */
+export function buildDemoData(orgId: string): DemoData {
+  const propertyId = (key: PropertyKey) =>
+    demoId(orgId, "property", propertySpecs.findIndex((p) => p.key === key) + 1);
+  const ownerId = (key: OwnerKey) =>
+    demoId(orgId, "owner", ownerSpecs.findIndex((o) => o.key === key) + 1);
+
+  const properties: NewProperty[] = propertySpecs.map(({ key, ...property }) => ({
+    ...property,
+    id: propertyId(key),
+    orgId,
+  }));
+
+  const rooms: NewRoom[] = roomSpecs.map((room, index) => ({
+    id: demoId(orgId, "room", index + 1),
+    orgId,
+    propertyId: propertyId(room.property),
+    name: room.name,
+    rentPence: room.rentPence,
+    rentFrequency: "monthly",
+    sizeSqm: room.sizeSqm,
+    features: room.features,
+    status: room.status,
+  }));
+
+  const tenants: NewTenant[] = tenantNames.map(([firstName, lastName], index) => ({
+    id: demoId(orgId, "tenant", index + 1),
+    orgId,
+    firstName,
+    lastName,
+    email: `${firstName}.${lastName}@example.com`.toLowerCase(),
+    phone: `07700 900${String(101 + index)}`,
+  }));
+
+  // Students in Manchester are on 12-month fixed terms; everyone else is periodic.
+  const tenancies: NewTenancy[] = rooms
+    .filter((room) => room.status === "let")
+    .map((room, index) => {
+      const student = room.propertyId === propertyId("manchester");
+      return {
+        id: demoId(orgId, "tenancy", index + 1),
+        orgId,
+        roomId: room.id!,
+        startDate: student ? "2026-09-01" : "2026-04-15",
+        endDate: student ? "2027-08-31" : null,
+        status: "active",
+        rentPence: room.rentPence,
+        rentFrequency: "monthly",
+        rentDueDay: student ? 1 : 15,
+        depositPence: fiveWeeksDeposit(room.rentPence),
+      };
+    });
+
+  const tenancyTenants: NewTenancyTenant[] = tenancies.map((tenancy, index) => ({
+    id: demoId(orgId, "tenancy-tenant", index + 1),
+    orgId,
+    tenancyId: tenancy.id!,
+    tenantId: tenants[index]!.id!,
+  }));
+
+  const owners: NewOwner[] = ownerSpecs.map(({ key, ...owner }) => ({
+    ...owner,
+    id: ownerId(key),
+    orgId,
+  }));
+
+  const propertyOwners: NewPropertyOwner[] = propertyOwnerSpecs.map((link, index) => ({
+    id: demoId(orgId, "property-owner", index + 1),
+    orgId,
+    propertyId: propertyId(link.property),
+    ownerId: ownerId(link.owner),
+  }));
+
+  return { properties, rooms, tenants, tenancies, tenancyTenants, owners, propertyOwners };
+}

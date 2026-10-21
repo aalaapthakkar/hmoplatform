@@ -10,19 +10,22 @@ import {
   tenancyTenants,
   tenants,
 } from "../schema";
-import {
-  DEMO_ORG_ID,
-  DEMO_ORG_NAME,
-  demoOwners,
-  demoProperties,
-  demoPropertyOwners,
-  demoRooms,
-  demoTenancies,
-  demoTenancyTenants,
-  demoTenants,
-} from "./data";
+import { DEMO_ORG_ID, DEMO_ORG_NAME, buildDemoData } from "./data";
 
 type Database = PgDatabase<PgQueryResultHKT>;
+type Transaction = Parameters<Parameters<Database["transaction"]>[0]>[0];
+
+/** Inserts the demo rows for orgId. Rows that already exist are left alone. */
+async function insertDemoData(tx: Transaction, orgId: string) {
+  const data = buildDemoData(orgId);
+  await tx.insert(properties).values(data.properties).onConflictDoNothing();
+  await tx.insert(rooms).values(data.rooms).onConflictDoNothing();
+  await tx.insert(tenants).values(data.tenants).onConflictDoNothing();
+  await tx.insert(tenancies).values(data.tenancies).onConflictDoNothing();
+  await tx.insert(tenancyTenants).values(data.tenancyTenants).onConflictDoNothing();
+  await tx.insert(owners).values(data.owners).onConflictDoNothing();
+  await tx.insert(propertyOwners).values(data.propertyOwners).onConflictDoNothing();
+}
 
 /**
  * Inserts the demo organisation and its records in one transaction. Rows that
@@ -35,13 +38,7 @@ export async function seedDemoOrg(db: Database, { adminUserId }: { adminUserId?:
       .insert(organisations)
       .values({ id: DEMO_ORG_ID, name: DEMO_ORG_NAME })
       .onConflictDoNothing();
-    await tx.insert(properties).values(demoProperties).onConflictDoNothing();
-    await tx.insert(rooms).values(demoRooms).onConflictDoNothing();
-    await tx.insert(tenants).values(demoTenants).onConflictDoNothing();
-    await tx.insert(tenancies).values(demoTenancies).onConflictDoNothing();
-    await tx.insert(tenancyTenants).values(demoTenancyTenants).onConflictDoNothing();
-    await tx.insert(owners).values(demoOwners).onConflictDoNothing();
-    await tx.insert(propertyOwners).values(demoPropertyOwners).onConflictDoNothing();
+    await insertDemoData(tx, DEMO_ORG_ID);
 
     if (adminUserId) {
       await tx
@@ -49,5 +46,15 @@ export async function seedDemoOrg(db: Database, { adminUserId }: { adminUserId?:
         .values({ orgId: DEMO_ORG_ID, userId: adminUserId, role: "admin" })
         .onConflictDoNothing();
     }
+  });
+}
+
+/**
+ * Adds the demo properties, rooms, tenants and owners to an organisation that
+ * already exists, in one transaction. Safe to run more than once.
+ */
+export async function seedDemoDataInto(db: Database, orgId: string) {
+  await db.transaction(async (tx) => {
+    await insertDemoData(tx, orgId);
   });
 }

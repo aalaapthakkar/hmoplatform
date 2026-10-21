@@ -3,6 +3,8 @@
 import { z } from "zod";
 import { requireMembership } from "@/lib/auth/session";
 import { createClient } from "@/lib/supabase/server";
+import { detailsSchema } from "@/lib/validation/details";
+import { ownerArgs, ownershipSchema } from "@/lib/validation/property";
 import { roomSchema, toRoomRow } from "@/lib/validation/room";
 
 export type ActionResult = { status: "success" | "error"; message: string };
@@ -14,6 +16,10 @@ const CHECK_AGAIN: ActionResult = {
 const NOT_FOUND: ActionResult = {
   status: "error",
   message: "We couldn't find that room. Refresh the page and try again.",
+};
+const PROPERTY_NOT_FOUND: ActionResult = {
+  status: "error",
+  message: "We couldn't find that property. Refresh the page and try again.",
 };
 const TRY_AGAIN: ActionResult = {
   status: "error",
@@ -88,4 +94,46 @@ export async function archiveRoom(propertyId: string, roomId: string): Promise<A
   if (data.length === 0) return NOT_FOUND;
 
   return { status: "success", message: `${data[0]!.name} archived.` };
+}
+
+/** Changes how the property is held, its owner and head rent, in one transaction. */
+export async function setOwnership(propertyId: string, input: unknown): Promise<ActionResult> {
+  const parsed = ownershipSchema.safeParse(input);
+  if (!parsed.success || !id.safeParse(propertyId).success) return CHECK_AGAIN;
+
+  await requireMembership();
+  const supabase = await createClient();
+  const { error } = await supabase.rpc("set_property_ownership", {
+    p_property_id: propertyId,
+    ...ownerArgs(parsed.data),
+  });
+  if (error?.code === "P0002") return PROPERTY_NOT_FOUND;
+  if (error) return TRY_AGAIN;
+
+  return { status: "success", message: "Ownership saved." };
+}
+
+/** Saves the description, amenities, house rules and bills included flag. */
+export async function updateDetails(propertyId: string, input: unknown): Promise<ActionResult> {
+  const parsed = detailsSchema.safeParse(input);
+  if (!parsed.success || !id.safeParse(propertyId).success) return CHECK_AGAIN;
+
+  const membership = await requireMembership();
+  const supabase = await createClient();
+  const { description, amenities, houseRules, billsIncluded } = parsed.data;
+  const { data, error } = await supabase
+    .from("properties")
+    .update({
+      description,
+      amenities,
+      house_rules: houseRules,
+      bills_included: billsIncluded,
+    })
+    .eq("id", propertyId)
+    .eq("org_id", membership.orgId)
+    .select("id");
+  if (error) return TRY_AGAIN;
+  if (data.length === 0) return PROPERTY_NOT_FOUND;
+
+  return { status: "success", message: "Details saved." };
 }

@@ -119,6 +119,18 @@ export function Choice({
 
 export type FieldErrors<T> = Partial<Record<keyof T, string[]>>;
 
+/** What field(name) spreads onto an input, select or textarea. */
+export type FieldProps = {
+  id: string;
+  name: string;
+  value: string;
+  onChange: (
+    event: ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>,
+  ) => void;
+  "aria-invalid": boolean | undefined;
+  "aria-describedby": string;
+};
+
 /**
  * Form state for small forms whose values are all strings until validated.
  * field(name) gives an input its id, value, change handler and error wiring.
@@ -132,12 +144,12 @@ export function useFormValues<T extends Record<string, string>>(initial: T) {
     setErrors((current) => ({ ...current, [name]: undefined }));
   }
 
-  function field(name: keyof T & string) {
+  function field(name: keyof T & string): FieldProps {
     const error = errors[name]?.[0];
     return {
       id: name,
       name,
-      value: values[name],
+      value: values[name] as string,
       onChange: (event: ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) =>
         set(name, event.target.value),
       "aria-invalid": error ? true : undefined,

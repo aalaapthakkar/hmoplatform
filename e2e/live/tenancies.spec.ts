@@ -126,4 +126,28 @@ test("a room's tenancies: let, line up the next tenant, give notice, end and mov
   const card = page.getByTestId("room-card").filter({ hasText: "Room 1" });
   await expect(card).toContainText("Cara Lewis");
   await expect(card).toContainText("Let");
+
+  // Occupancy, filtered to this property: Room 1 let to Cara, Room 2 vacant now.
+  const propertyId = href!.split("/").pop()!;
+  await page.goto(`/occupancy?property=${propertyId}`);
+  await expect(page.getByTestId("occupancy-summary")).toHaveText("2 rooms · 1 let · 1 vacant");
+  const main = page.getByRole("main");
+  await expect(main.getByText("Cara Lewis").locator("visible=true")).toHaveCount(1);
+  await page.goto(`/occupancy?property=${propertyId}&status=vacant`);
+  await expect(page.getByTestId("occupancy-summary")).toHaveText("1 room · 0 let · 1 vacant");
+
+  // The CSV has the same rooms, with names but no contact details.
+  await page.goto(`/occupancy?property=${propertyId}`);
+  const [download] = await Promise.all([
+    page.waitForEvent("download"),
+    page.getByRole("link", { name: "Download CSV" }).click(),
+  ]);
+  expect(download.suggestedFilename()).toMatch(/^occupancy-\d{4}-\d{2}-\d{2}\.csv$/);
+  const csv = (await import("node:fs")).readFileSync((await download.path())!, "utf8");
+  const lines = csv.replace(/^﻿/, "").trimEnd().split("\r\n");
+  expect(lines).toHaveLength(3);
+  expect(lines[1]).toContain(
+    `"${address}","LS6 2AB","Room 1","Let","Cara Lewis","£550.00 per month"`,
+  );
+  expect(lines[2]).toContain('"Room 2","Vacant",""');
 });

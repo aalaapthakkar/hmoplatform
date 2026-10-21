@@ -36,6 +36,18 @@ test("the properties pages require a signed-in user", async ({ page }) => {
   await expect(page).toHaveURL(/\/log-in$/);
   await page.goto("/properties/0f8fad5b-d9cb-469f-a165-70867728950e/documents");
   await expect(page).toHaveURL(/\/log-in$/);
+  await page.goto(
+    "/properties/0f8fad5b-d9cb-469f-a165-70867728950e/rooms/0f8fad5b-d9cb-469f-a165-70867728950e",
+  );
+  await expect(page).toHaveURL(/\/log-in$/);
+});
+
+test("occupancy and its CSV require a signed-in user", async ({ page, request }) => {
+  await page.goto("/occupancy");
+  await expect(page).toHaveURL(/\/log-in$/);
+  const csv = await request.get("/occupancy/export", { maxRedirects: 0 });
+  expect(csv.status()).toBe(307);
+  expect(csv.headers().location).toMatch(/\/log-in$/);
 });
 
 test("onboarding requires a signed-in user", async ({ page }) => {

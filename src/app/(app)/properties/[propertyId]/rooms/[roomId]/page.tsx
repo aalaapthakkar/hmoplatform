@@ -4,6 +4,7 @@ import { Suspense } from "react";
 import { z } from "zod";
 import { SectionFallback } from "@/components/properties/section-heading";
 import { RoomTenancies } from "@/components/tenancies/room-tenancies";
+import { requireMembership } from "@/lib/auth/session";
 import { todayInLondon } from "@/lib/format";
 import { getProperty } from "@/lib/properties/queries";
 import { penceToPounds, rentLabel, ROOM_STATUS_LABELS } from "@/lib/properties/rooms";
@@ -33,7 +34,10 @@ const ROOM_COLUMNS = `
   id, name, status, rent_pence, rent_frequency,
   tenancies (id, status, start_date, end_date, notice_date, end_reason,
     rent_pence, rent_frequency, rent_due_day, deposit_pence,
-    tenancy_tenants (status, tenants (first_name, last_name, email, phone)),
+    tenancy_tenants (status, tenants (id, user_id, first_name, last_name, email, phone,
+      tenant_portal_invites (expires_at, used_at, revoked_at))),
+    rent_charges (amount_pence, status),
+    rent_payments (amount_pence, status),
     onboardings (id, status),
     tenancy_guarantors (id, name, email, phone, address, status, removed_at, removed_reason),
     signature_requests (id, kind, status, provider, provider_request_id, sent_at, completed_at,
@@ -44,9 +48,22 @@ const ROOM_COLUMNS = `
 async function Room({ params, searchParams }: Props) {
   const [{ propertyId, roomId }, query] = await Promise.all([params, searchParams]);
   if (!z.uuid().safeParse(roomId).success) notFound();
-  await getProperty(propertyId);
+  const [property, membership] = await Promise.all([getProperty(propertyId), requireMembership()]);
 
   const supabase = await createClient();
+  // Bring rent charges up to date for tenancies that are paying rent, so the
+  // balance on the panel is right.
+  const { data: paying } = await supabase
+    .from("tenancies")
+    .select("id")
+    .eq("room_id", roomId)
+    .in("status", ["active", "ending"]);
+  await Promise.all(
+    (paying ?? []).map((tenancy) =>
+      supabase.rpc("sync_rent_charges", { p_tenancy_id: tenancy.id }),
+    ),
+  );
+
   const { data: room, error } = await supabase
     .from("rooms")
     .select(ROOM_COLUMNS)
@@ -87,6 +104,8 @@ async function Room({ params, searchParams }: Props) {
       selectedId={selectedId}
       canAdd={room.status !== "archived" && hasSpaceForTenancy(dates)}
       today={today}
+      place={`${room.name}, ${property.address_line_1}`}
+      organisation={membership.orgName}
     />
   );
 }

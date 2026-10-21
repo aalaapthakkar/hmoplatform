@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { summariseTenancy, type TenancyRow } from "./summary";
+import { portalAccess, summariseTenancy, type TenancyRow } from "./summary";
 
 const TODAY = "2026-10-21";
 
@@ -97,5 +97,60 @@ describe("summariseTenancy", () => {
         TODAY,
       ).tenantNames,
     ).toBe("Callum Reid and Amy Reid");
+  });
+});
+
+describe("portalAccess", () => {
+  const NOW = "2026-10-21T12:00:00.000Z";
+  const invite = (expires: string, extra: { used_at?: string; revoked_at?: string } = {}) => ({
+    expires_at: expires,
+    used_at: extra.used_at ?? null,
+    revoked_at: extra.revoked_at ?? null,
+  });
+
+  it("says joined once the tenant has an account", () => {
+    expect(portalAccess("user-1", [], NOW)).toEqual({ state: "joined" });
+  });
+
+  it("shows the latest live invite and ignores expired, used and revoked ones", () => {
+    expect(
+      portalAccess(
+        null,
+        [
+          invite("2026-10-20T00:00:00.000Z"),
+          invite("2026-11-04T00:00:00.000Z"),
+          invite("2026-11-05T00:00:00.000Z", { revoked_at: NOW }),
+        ],
+        NOW,
+      ),
+    ).toEqual({ state: "invited", until: "2026-11-04T00:00:00.000Z" });
+    expect(portalAccess(null, [invite("2026-10-20T00:00:00.000Z")], NOW)).toEqual({
+      state: "not_invited",
+    });
+    expect(portalAccess(null, undefined, NOW)).toEqual({ state: "not_invited" });
+  });
+});
+
+describe("tenancy balance", () => {
+  it("counts active charges and payments only", () => {
+    const summary = summariseTenancy(
+      row({
+        rent_charges: [
+          { amount_pence: 55_000, status: "active" },
+          { amount_pence: 55_000, status: "active" },
+          { amount_pence: 2_000, status: "voided" },
+        ],
+        rent_payments: [
+          { amount_pence: 55_000, status: "active" },
+          { amount_pence: 55_000, status: "voided" },
+        ],
+      }),
+      TODAY,
+    );
+    expect(summary.balancePence).toBe(55_000);
+  });
+
+  it("is unknown when the ledger wasn't loaded", () => {
+    expect(summariseTenancy(row(), TODAY).balancePence).toBeNull();
   });
 });

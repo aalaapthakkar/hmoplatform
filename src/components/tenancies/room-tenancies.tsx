@@ -27,6 +27,7 @@ import { Sheet, SheetContent } from "@/components/ui/sheet";
 import { useMediaQuery } from "@/hooks/use-media-query";
 import type { TenancySummary } from "@/lib/tenancies/summary";
 import { cn } from "@/lib/utils";
+import { RentAndPortal } from "./rent-and-portal";
 import { MoveInDateForm, NoticeForm, TenancyForm } from "./tenancy-forms";
 
 export type RoomInfo = {
@@ -68,6 +69,9 @@ type RoomTenanciesProps = {
   selectedId: string | null;
   canAdd: boolean;
   today: string;
+  /** "Room 1, 12 High Street", for messages to tenants. */
+  place: string;
+  organisation: string;
 };
 
 export function RoomTenancies({
@@ -77,6 +81,8 @@ export function RoomTenancies({
   selectedId,
   canAdd,
   today,
+  place,
+  organisation,
 }: RoomTenanciesProps) {
   const router = useRouter();
   const pathname = usePathname();
@@ -149,6 +155,8 @@ export function RoomTenancies({
       {selected ? (
         <TenancyPanel
           tenancy={selected}
+          place={place}
+          organisation={organisation}
           hasCurrent={hasCurrent}
           onNotice={() => setPanel("notice")}
           onMove={setMove}
@@ -295,6 +303,8 @@ function TenancySwitcher({
 
 function TenancyPanel({
   tenancy,
+  place,
+  organisation,
   hasCurrent,
   onNotice,
   onMove,
@@ -303,6 +313,8 @@ function TenancyPanel({
   pending,
 }: {
   tenancy: TenancySummary;
+  place: string;
+  organisation: string;
   hasCurrent: boolean;
   onNotice: () => void;
   onMove: (move: Move) => void;
@@ -446,6 +458,10 @@ function TenancyPanel({
           <p className="-mt-2 text-xs text-muted-foreground">
             You can mark it as ended from {tenancy.end}.
           </p>
+        ) : null}
+
+        {tenancy.status !== "cancelled" ? (
+          <RentAndPortal tenancy={tenancy} place={place} organisation={organisation} />
         ) : null}
 
         {tenancy.status !== "cancelled" ? (

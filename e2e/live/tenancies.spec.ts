@@ -1,31 +1,10 @@
 import { expect, type Page, test } from "@playwright/test";
-import { addHouseShare, uniqueAddress } from "./helpers";
+import { addHouseShare, addTenancy, londonDate, ukDate, uniqueAddress } from "./helpers";
 
 test.skip(
   !process.env.E2E_EMAIL || !process.env.E2E_PASSWORD,
   "Set E2E_EMAIL and E2E_PASSWORD in .env.local to run the live tests.",
 );
-
-/** Today and other days in London, as the date inputs want them. */
-function londonDate(daysFromToday = 0) {
-  const today = new Intl.DateTimeFormat("en-CA", { timeZone: "Europe/London" }).format(new Date());
-  const date = new Date(`${today}T00:00:00Z`);
-  date.setUTCDate(date.getUTCDate() + daysFromToday);
-  return date.toISOString().slice(0, 10);
-}
-
-const ukDate = (iso: string) => iso.split("-").reverse().join("/");
-
-async function addTenancy(page: Page, first: string, last: string, startDate: string) {
-  await page.getByRole("button", { name: "Add tenancy" }).click();
-  const form = page.getByRole("dialog");
-  await form.getByLabel("First name").fill(first);
-  await form.getByLabel("Last name").fill(last);
-  await form.getByLabel("Start date").fill(startDate);
-  await form.getByLabel("Rent per month").fill("550");
-  await form.getByLabel("Deposit (optional)").fill("600");
-  await form.getByRole("button", { name: "Add tenancy" }).click();
-}
 
 /** Picks a tenancy in the switcher: tabs on wider screens, a dropdown on a phone. */
 async function chooseTenancy(page: Page, name: string) {

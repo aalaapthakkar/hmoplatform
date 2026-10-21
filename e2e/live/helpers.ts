@@ -36,3 +36,31 @@ export async function addHouseShare(page: Page, address: string, rooms: number) 
   await page.getByRole("button", { name: "Add property" }).click();
   await expect(page).toHaveURL(/\/properties$/);
 }
+
+/** Today and other days in London, as the date inputs want them. */
+export function londonDate(daysFromToday = 0) {
+  const today = new Intl.DateTimeFormat("en-CA", { timeZone: "Europe/London" }).format(new Date());
+  const date = new Date(`${today}T00:00:00Z`);
+  date.setUTCDate(date.getUTCDate() + daysFromToday);
+  return date.toISOString().slice(0, 10);
+}
+
+export const ukDate = (iso: string) => iso.split("-").reverse().join("/");
+
+export async function addTenancy(
+  page: Page,
+  first: string,
+  last: string,
+  startDate: string,
+  dueDay?: number,
+) {
+  await page.getByRole("button", { name: "Add tenancy" }).click();
+  const form = page.getByRole("dialog");
+  await form.getByLabel("First name").fill(first);
+  await form.getByLabel("Last name").fill(last);
+  await form.getByLabel("Start date").fill(startDate);
+  await form.getByLabel("Rent per month").fill("550");
+  if (dueDay) await form.getByLabel("Rent due").selectOption(String(dueDay));
+  await form.getByLabel("Deposit (optional)").fill("600");
+  await form.getByRole("button", { name: "Add tenancy" }).click();
+}

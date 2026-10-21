@@ -12,6 +12,8 @@ export type AuthField = {
   type: "email" | "password" | "text";
   autoComplete: string;
   hint?: string;
+  /** Filled in to start with, such as an email address we already know. */
+  defaultValue?: string;
 };
 
 type AuthFormProps = {
@@ -60,7 +62,11 @@ export function AuthForm({ action, fields, submitLabel, pendingLabel }: AuthForm
               name={field.name}
               type={field.type}
               autoComplete={field.autoComplete}
-              defaultValue={field.type === "password" ? undefined : state.values?.[field.name]}
+              defaultValue={
+                field.type === "password"
+                  ? undefined
+                  : (state.values?.[field.name] ?? field.defaultValue)
+              }
               aria-invalid={errors ? true : undefined}
               aria-describedby={describedBy || undefined}
               required

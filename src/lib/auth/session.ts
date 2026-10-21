@@ -3,7 +3,7 @@ import "server-only";
 import { redirect } from "next/navigation";
 import { cache } from "react";
 import type { MembershipRole } from "@/db/schema";
-import { LOG_IN_ROUTE } from "@/lib/routes";
+import { LOG_IN_ROUTE, PORTAL_ROUTE } from "@/lib/routes";
 import { createClient } from "@/lib/supabase/server";
 
 export type CurrentUser = { id: string; email: string | null };
@@ -47,9 +47,29 @@ export const getCurrentMembership = cache(async (): Promise<CurrentMembership | 
   return { orgId: data.org_id, orgName: data.organisations.name, role: data.role };
 });
 
-/** Like getCurrentMembership, but sends users without an organisation to onboarding. */
+/**
+ * Whether the signed-in user has joined the tenant portal. RLS only lets a
+ * tenant see tenant records linked to their own account.
+ */
+export const isTenantUser = cache(async (): Promise<boolean> => {
+  const user = await getCurrentUser();
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .from("tenants")
+    .select("id")
+    .eq("user_id", user.id)
+    .limit(1);
+  if (error) throw new Error("Could not check tenant access", { cause: error.code });
+  return data.length > 0;
+});
+
+/**
+ * Like getCurrentMembership, but sends tenants to their portal and anyone
+ * else without an organisation to onboarding.
+ */
 export async function requireMembership(): Promise<CurrentMembership> {
   const membership = await getCurrentMembership();
-  if (!membership) redirect("/onboarding");
-  return membership;
+  if (membership) return membership;
+  if (await isTenantUser()) redirect(PORTAL_ROUTE);
+  redirect("/onboarding");
 }

@@ -106,8 +106,8 @@ export function StaffStatementTools({
               {voiding?.type === "charge" ? "Void this charge?" : "Reverse this payment?"}
             </AlertDialogTitle>
             <AlertDialogDescription>
-              It stays on the statement, crossed out, with your reason. It no longer counts towards
-              the balance.
+              It stays on the statement, crossed out, and no longer counts towards the balance. The
+              tenant sees your reason in their portal.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <div className="flex flex-col gap-2">

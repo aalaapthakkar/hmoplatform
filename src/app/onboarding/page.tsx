@@ -3,8 +3,8 @@ import { redirect } from "next/navigation";
 import { Suspense } from "react";
 import { AuthCard } from "@/components/auth/auth-card";
 import { AuthForm } from "@/components/auth/auth-form";
-import { getCurrentMembership } from "@/lib/auth/session";
-import { HOME_ROUTE } from "@/lib/routes";
+import { getCurrentMembership, isTenantUser } from "@/lib/auth/session";
+import { HOME_ROUTE, PORTAL_ROUTE } from "@/lib/routes";
 import { createOrganisation } from "./actions";
 
 export const metadata: Metadata = { title: "Set up your organisation" };
@@ -42,5 +42,6 @@ export default function OnboardingPage() {
 async function RedirectIfOnboarded() {
   const membership = await getCurrentMembership();
   if (membership) redirect(HOME_ROUTE);
+  if (await isTenantUser()) redirect(PORTAL_ROUTE);
   return null;
 }

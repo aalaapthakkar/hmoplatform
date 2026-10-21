@@ -21,7 +21,7 @@ export type NavItem = {
 
 export const NAV_ITEMS: NavItem[] = [
   { label: "Dashboard", href: "/dashboard", icon: LayoutDashboard },
-  { label: "Properties", href: "/properties", icon: Building2, comingSoon: true },
+  { label: "Properties", href: "/properties", icon: Building2 },
   { label: "Rooms", href: "/rooms", icon: DoorOpen, comingSoon: true },
   { label: "Tenancies", href: "/tenancies", icon: FileText, comingSoon: true },
   { label: "Rent", href: "/rent", icon: PoundSterling, comingSoon: true },

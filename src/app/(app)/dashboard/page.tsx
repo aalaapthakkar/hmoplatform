@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import Link from "next/link";
 import { Suspense } from "react";
 import { Card, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { requireMembership } from "@/lib/auth/session";
@@ -16,12 +17,19 @@ export default function DashboardPage() {
       </div>
 
       <div className="grid gap-4 sm:grid-cols-2">
-        <Card>
-          <CardHeader>
-            <CardTitle>Properties and rooms</CardTitle>
-            <CardDescription>Add your houses and the rooms in them. Coming soon.</CardDescription>
-          </CardHeader>
-        </Card>
+        <Link
+          href="/properties"
+          className="rounded-xl outline-none focus-visible:ring-3 focus-visible:ring-ring/50"
+        >
+          <Card className="h-full transition-colors hover:bg-muted/50">
+            <CardHeader>
+              <CardTitle>Properties and rooms</CardTitle>
+              <CardDescription>
+                See your houses, who&apos;s in each room and what needs attention.
+              </CardDescription>
+            </CardHeader>
+          </Card>
+        </Link>
         <Card>
           <CardHeader>
             <CardTitle>Tenancies and rent</CardTitle>

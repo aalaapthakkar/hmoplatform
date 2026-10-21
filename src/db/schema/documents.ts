@@ -1,5 +1,15 @@
 import { sql } from "drizzle-orm";
-import { check, date, foreignKey, index, pgEnum, pgTable, text, uuid } from "drizzle-orm/pg-core";
+import {
+  check,
+  date,
+  foreignKey,
+  index,
+  pgEnum,
+  pgTable,
+  text,
+  unique,
+  uuid,
+} from "drizzle-orm/pg-core";
 import { recordStatus } from "./_enums";
 import { orgId } from "./_org";
 import { timestamps } from "./_shared";
@@ -48,6 +58,7 @@ export const documents = pgTable(
     ...timestamps,
   },
   (table) => [
+    unique("documents_id_org_id_key").on(table.id, table.orgId),
     index("documents_org_id_expiry_date_idx").on(table.orgId, table.expiryDate),
     index("documents_property_id_idx").on(table.propertyId),
     index("documents_room_id_idx").on(table.roomId),

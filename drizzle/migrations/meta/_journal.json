@@ -120,6 +120,20 @@
       "when": 1792611262112,
       "tag": "0016_onboarding_follows_tenancy",
       "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "7",
+      "when": 1792612089655,
+      "tag": "0017_esign",
+      "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "7",
+      "when": 1792612091997,
+      "tag": "0018_esign_functions",
+      "breakpoints": true
     }
   ]
 }

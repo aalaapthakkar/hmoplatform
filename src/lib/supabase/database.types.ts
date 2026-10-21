@@ -40,6 +40,12 @@ type RightToRentMethod = "manual_documents" | "online_share_code" | "idsp";
 type RightToRentPermission = "unlimited" | "time_limited";
 type ReminderKind = "right_to_rent_follow_up" | "other";
 type ReminderStatus = "open" | "done" | "dismissed";
+type GuarantorStatus = "required" | "removed";
+type DocumentTemplateKind = "tenancy_agreement" | "guarantor_agreement";
+type SignatureRequestStatus =
+  "sent" | "partly_signed" | "completed" | "declined" | "cancelled" | "error";
+type SignerRole = "tenant" | "guarantor" | "organisation";
+type SignerStatus = "awaiting" | "signed" | "declined";
 type DocumentType =
   | "gas_safety"
   | "eicr"
@@ -745,6 +751,168 @@ export type Database = {
         Update: Partial<Database["public"]["Tables"]["reminders"]["Insert"]>;
         Relationships: [];
       };
+      tenancy_guarantors: {
+        Row: {
+          id: string;
+          org_id: string;
+          tenancy_id: string;
+          name: string;
+          email: string;
+          phone: string | null;
+          address: string | null;
+          status: GuarantorStatus;
+          removed_at: string | null;
+          removed_by: string | null;
+          removed_reason: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          org_id: string;
+          tenancy_id: string;
+          name: string;
+          email: string;
+          phone?: string | null;
+          address?: string | null;
+          status?: GuarantorStatus;
+          removed_at?: string | null;
+          removed_by?: string | null;
+          removed_reason?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: Partial<Database["public"]["Tables"]["tenancy_guarantors"]["Insert"]>;
+        Relationships: [];
+      };
+      document_templates: {
+        Row: {
+          id: string;
+          org_id: string;
+          kind: DocumentTemplateKind;
+          name: string;
+          body: string;
+          is_draft: boolean;
+          is_default: boolean;
+          status: RecordStatus;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          org_id: string;
+          kind: DocumentTemplateKind;
+          name: string;
+          body: string;
+          is_draft?: boolean;
+          is_default?: boolean;
+          status?: RecordStatus;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: Partial<Database["public"]["Tables"]["document_templates"]["Insert"]>;
+        Relationships: [];
+      };
+      signature_requests: {
+        Row: {
+          id: string;
+          org_id: string;
+          tenancy_id: string;
+          kind: DocumentTemplateKind;
+          template_id: string | null;
+          guarantor_id: string | null;
+          provider: string;
+          provider_request_id: string;
+          status: SignatureRequestStatus;
+          unsigned_document_id: string | null;
+          signed_document_id: string | null;
+          sent_by: string | null;
+          sent_at: string;
+          completed_at: string | null;
+          cancelled_at: string | null;
+          cancelled_reason: string | null;
+          last_event_at: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          org_id: string;
+          tenancy_id: string;
+          kind: DocumentTemplateKind;
+          template_id?: string | null;
+          guarantor_id?: string | null;
+          provider: string;
+          provider_request_id: string;
+          status?: SignatureRequestStatus;
+          unsigned_document_id?: string | null;
+          signed_document_id?: string | null;
+          sent_by?: string | null;
+          sent_at?: string;
+          completed_at?: string | null;
+          cancelled_at?: string | null;
+          cancelled_reason?: string | null;
+          last_event_at?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: Partial<Database["public"]["Tables"]["signature_requests"]["Insert"]>;
+        Relationships: [];
+      };
+      signature_request_signers: {
+        Row: {
+          id: string;
+          org_id: string;
+          request_id: string;
+          role: SignerRole;
+          name: string;
+          email: string;
+          signing_order: number;
+          status: SignerStatus;
+          signed_at: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          org_id: string;
+          request_id: string;
+          role: SignerRole;
+          name: string;
+          email: string;
+          signing_order: number;
+          status?: SignerStatus;
+          signed_at?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: Partial<Database["public"]["Tables"]["signature_request_signers"]["Insert"]>;
+        Relationships: [];
+      };
+      esign_events: {
+        Row: {
+          id: string;
+          org_id: string;
+          request_id: string;
+          event_key: string;
+          event_type: string;
+          event_time: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          org_id: string;
+          request_id: string;
+          event_key: string;
+          event_type: string;
+          event_time?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: Partial<Database["public"]["Tables"]["esign_events"]["Insert"]>;
+        Relationships: [];
+      };
     };
     Views: { [_ in never]: never };
     Functions: {
@@ -859,6 +1027,47 @@ export type Database = {
         };
         Returns: undefined;
       };
+      add_guarantor: {
+        Args: {
+          p_tenancy_id: string;
+          p_name: string;
+          p_email: string;
+          p_phone: string | null;
+          p_address: string | null;
+        };
+        Returns: string;
+      };
+      remove_guarantor: { Args: { p_guarantor_id: string; p_reason: string }; Returns: undefined };
+      record_signature_request: {
+        Args: {
+          p_tenancy_id: string;
+          p_kind: DocumentTemplateKind;
+          p_template_id: string | null;
+          p_guarantor_id: string | null;
+          p_provider: string;
+          p_provider_request_id: string;
+          p_unsigned_document_id: string | null;
+          p_signers: Json;
+        };
+        Returns: string;
+      };
+      attach_signed_document: {
+        Args: { p_request_id: string; p_document_id: string };
+        Returns: undefined;
+      };
+      esign_apply_event: {
+        Args: {
+          p_relay_secret: string;
+          p_provider: string;
+          p_provider_request_id: string;
+          p_event_key: string;
+          p_event_type: string;
+          p_event_time: string | null;
+          p_request_status: SignatureRequestStatus;
+          p_signers: Json;
+        };
+        Returns: string;
+      };
       property_activity: {
         Args: { p_property_id: string; p_limit?: number };
         Returns: {
@@ -895,6 +1104,11 @@ export type Database = {
       right_to_rent_permission: RightToRentPermission;
       reminder_kind: ReminderKind;
       reminder_status: ReminderStatus;
+      guarantor_status: GuarantorStatus;
+      document_template_kind: DocumentTemplateKind;
+      signature_request_status: SignatureRequestStatus;
+      signer_role: SignerRole;
+      signer_status: SignerStatus;
       document_type: DocumentType;
     };
     CompositeTypes: { [_ in never]: never };

@@ -38,6 +38,10 @@ const BUSINESS_TABLES = [
   "onboarding_steps",
   "right_to_rent_checks",
   "reminders",
+  "tenancy_guarantors",
+  "signature_requests",
+  "signature_request_signers",
+  "esign_events",
 ] as const;
 
 type BusinessTable = (typeof BUSINESS_TABLES)[number];
@@ -107,6 +111,23 @@ const INSERTS: Record<
     sql: "insert into public.reminders (org_id, kind, title, due_date, tenant_id) values ($1, 'other', 'Test reminder', '2026-12-01', $2) returning id",
     params: [orgId, parents.tenants],
   }),
+  // Removed, cancelled and random keys avoid the one-per-tenancy rules in the parent-swap tests.
+  tenancy_guarantors: (orgId, parents) => ({
+    sql: "insert into public.tenancy_guarantors (org_id, tenancy_id, name, email, status, removed_at, removed_reason) values ($1, $2, 'Gary Guarantor', 'gary@example.test', 'removed', now(), 'Test') returning id",
+    params: [orgId, parents.tenancies],
+  }),
+  signature_requests: (orgId, parents) => ({
+    sql: "insert into public.signature_requests (org_id, tenancy_id, kind, provider, provider_request_id, status) values ($1, $2, 'tenancy_agreement', 'fake', gen_random_uuid()::text, 'cancelled') returning id",
+    params: [orgId, parents.tenancies],
+  }),
+  signature_request_signers: (orgId, parents) => ({
+    sql: "insert into public.signature_request_signers (org_id, request_id, role, name, email, signing_order) values ($1, $2, 'tenant', 'Test Tenant', 'tenant@example.test', 1 + floor(random() * 30000)::int) returning id",
+    params: [orgId, parents.signature_requests],
+  }),
+  esign_events: (orgId, parents) => ({
+    sql: "insert into public.esign_events (org_id, request_id, event_key, event_type) values ($1, $2, gen_random_uuid()::text, 'test') returning id",
+    params: [orgId, parents.signature_requests],
+  }),
 };
 
 /** The business records each table's rows point at. */
@@ -125,6 +146,10 @@ const PARENTS: Record<BusinessTable, BusinessTable[]> = {
   onboarding_steps: ["onboardings"],
   right_to_rent_checks: ["tenants"],
   reminders: ["tenants"],
+  tenancy_guarantors: ["tenancies"],
+  signature_requests: ["tenancies"],
+  signature_request_signers: ["signature_requests"],
+  esign_events: ["signature_requests"],
 };
 
 let t: TestDatabase;
@@ -1896,6 +1921,302 @@ describe("onboarding", () => {
     await expect(
       t.asUser(ALICE, () => db.query("select public.withdraw_onboarding($1)", [onboarding])),
     ).rejects.toThrow(/Only an onboarding in progress/);
+  });
+});
+
+describe("tenancy documents and e-signing", () => {
+  const RELAY_SECRET = "test-relay-secret-value";
+  const relayHash = createHash("sha256").update(RELAY_SECRET).digest("hex");
+
+  beforeAll(async () => {
+    await db.query(
+      "insert into private.esign_settings (relay_secret_hash) values ($1) on conflict (id) do update set relay_secret_hash = excluded.relay_secret_hash",
+      [relayHash],
+    );
+  });
+
+  type Setup = {
+    tenancy: string;
+    guarantor: string;
+    tenancyRequest: string;
+    guarantorRequest: string;
+    ids: { tenancy: string; guarantor: string };
+  };
+
+  /** An upcoming tenancy with a guarantor and both agreements sent (committed). */
+  async function setUp(): Promise<Setup> {
+    return t.asUser(
+      ALICE,
+      async () => {
+        const room = (
+          await db.query<{ id: string }>(
+            "insert into public.rooms (org_id, property_id, name) values ($1, $2, 'Signing room') returning id",
+            [aliceOrg, aliceIds.properties],
+          )
+        ).rows[0]!.id;
+        const tenancy = (
+          await db.query<{ id: string }>(
+            "select public.create_tenancy($1, 'Tess', 'Tenant', 'tess@example.test', null, current_date + 30, 55000, 'monthly', 1, 0) as id",
+            [room],
+          )
+        ).rows[0]!.id;
+        const guarantor = (
+          await db.query<{ id: string }>(
+            "select public.add_guarantor($1, 'Gwen Guarantor', 'GWEN@example.test', null, '1 Safe Street') as id",
+            [tenancy],
+          )
+        ).rows[0]!.id;
+        const send = async (
+          kind: string,
+          providerId: string,
+          signers: object[],
+          guarantorId: string | null,
+        ) =>
+          (
+            await db.query<{ id: string }>(
+              "select public.record_signature_request($1, $2, null, $3, 'fake', $4, null, $5) as id",
+              [tenancy, kind, guarantorId, providerId, JSON.stringify(signers)],
+            )
+          ).rows[0]!.id;
+        const tenancyProvider = `tenancy-${randomUUID()}`;
+        const guarantorProvider = `guarantor-${randomUUID()}`;
+        const tenancyRequest = await send(
+          "tenancy_agreement",
+          tenancyProvider,
+          [
+            { role: "tenant", name: "Tess Tenant", email: "tess@example.test", order: 1 },
+            { role: "organisation", name: "Alice Adams", email: "alice@example.test", order: 2 },
+          ],
+          null,
+        );
+        const guarantorRequest = await send(
+          "guarantor_agreement",
+          guarantorProvider,
+          [
+            { role: "guarantor", name: "Gwen Guarantor", email: "gwen@example.test", order: 1 },
+            { role: "organisation", name: "Alice Adams", email: "alice@example.test", order: 2 },
+          ],
+          guarantor,
+        );
+        return {
+          tenancy,
+          guarantor,
+          tenancyRequest,
+          guarantorRequest,
+          ids: { tenancy: tenancyProvider, guarantor: guarantorProvider },
+        };
+      },
+      true,
+    );
+  }
+
+  /** Calls the webhook function as a signed-out visitor would, committing. */
+  async function applyEvent(
+    providerId: string,
+    status: string,
+    signers: object[],
+    secret = RELAY_SECRET,
+    key = randomUUID(),
+  ) {
+    await db.query("begin");
+    await db.query("set local role anon");
+    try {
+      const { rows } = await db.query<{ result: string }>(
+        "select public.esign_apply_event($1, 'fake', $2, $3, 'signature_request_signed', now(), $4, $5) as result",
+        [secret, providerId, key, status, JSON.stringify(signers)],
+      );
+      await db.query("commit");
+      return rows[0]!.result;
+    } catch (error) {
+      await db.query("rollback");
+      throw error;
+    }
+  }
+
+  const statusOf = (requestId: string) =>
+    t.asUser(ALICE, async () => {
+      const request = await db.query<{ status: string }>(
+        "select status from public.signature_requests where id = $1",
+        [requestId],
+      );
+      const signers = await db.query<{ role: string; status: string }>(
+        "select role, status from public.signature_request_signers where request_id = $1 order by signing_order",
+        [requestId],
+      );
+      return { status: request.rows[0]!.status, signers: signers.rows };
+    });
+
+  it("gives every organisation DRAFT tenancy and guarantor agreement templates", async () => {
+    const { rows } = await db.query<{ kind: string; is_draft: boolean; drafted: boolean }>(
+      "select kind, is_draft, body like '%DRAFT: replace with solicitor-approved wording%' as drafted from public.document_templates where org_id = $1 and is_default order by kind",
+      [aliceOrg],
+    );
+    expect(rows).toEqual([
+      { kind: "tenancy_agreement", is_draft: true, drafted: true },
+      { kind: "guarantor_agreement", is_draft: true, drafted: true },
+    ]);
+  });
+
+  it("lets only admins edit templates", async () => {
+    const edit = (user: string) =>
+      t.asUser(user, async () => {
+        const result = await db.query(
+          "update public.document_templates set name = 'Edited' where org_id = $1 and kind = 'tenancy_agreement'",
+          [aliceOrg],
+        );
+        return result.affectedRows;
+      });
+    expect(await edit(CAROL)).toBe(0);
+    expect(await edit(ALICE)).toBe(1);
+    expect(await edit(BOB)).toBe(0);
+    const staffCanRead = await t.asUser(CAROL, async () => {
+      const { rows } = await db.query(
+        "select id from public.document_templates where org_id = $1",
+        [aliceOrg],
+      );
+      return rows.length;
+    });
+    expect(staffCanRead).toBeGreaterThanOrEqual(2);
+  });
+
+  it("allows one guarantor per tenancy", async () => {
+    const { tenancy } = await setUp();
+    await expect(
+      t.asUser(ALICE, () =>
+        db.query("select public.add_guarantor($1, 'Another', 'another@example.test', null, null)", [
+          tenancy,
+        ]),
+      ),
+    ).rejects.toThrow(/already has a guarantor/);
+  });
+
+  it("only accepts webhook events with the relay secret, once each", async () => {
+    const { ids } = await setUp();
+    await expect(applyEvent(ids.tenancy, "partly_signed", [], "wrong-secret")).rejects.toThrow(
+      /Not allowed/,
+    );
+    const key = randomUUID();
+    expect(await applyEvent(ids.tenancy, "partly_signed", [], RELAY_SECRET, key)).toBe("applied");
+    expect(await applyEvent(ids.tenancy, "partly_signed", [], RELAY_SECRET, key)).toBe("duplicate");
+    expect(await applyEvent("nobody-knows-this", "completed", [])).toBe("unknown");
+  });
+
+  it("keeps the tenant's signature when the guarantor requirement is removed, and logs why", async () => {
+    const setup = await setUp();
+    await applyEvent(setup.ids.tenancy, "partly_signed", [
+      { email: "TESS@example.test", status: "signed" },
+    ]);
+
+    await t.asUser(
+      ALICE,
+      () =>
+        db.query("select public.remove_guarantor($1, 'Tenant paid six months upfront')", [
+          setup.guarantor,
+        ]),
+      true,
+    );
+
+    expect(await statusOf(setup.tenancyRequest)).toEqual({
+      status: "partly_signed",
+      signers: [
+        { role: "tenant", status: "signed" },
+        { role: "organisation", status: "awaiting" },
+      ],
+    });
+    expect((await statusOf(setup.guarantorRequest)).status).toBe("cancelled");
+
+    const logged = await t.asUser(ALICE, async () => {
+      const guarantor = await db.query(
+        "select status, removed_by, removed_reason from public.tenancy_guarantors where id = $1",
+        [setup.guarantor],
+      );
+      const audit = await db.query<{ n: number }>(
+        "select count(*)::int as n from public.audit_log where record_id = $1 and action = 'update' and actor_user_id = $2",
+        [setup.guarantor, ALICE],
+      );
+      return { guarantor: guarantor.rows, audit: audit.rows[0]!.n };
+    });
+    expect(logged).toEqual({
+      guarantor: [
+        { status: "removed", removed_by: ALICE, removed_reason: "Tenant paid six months upfront" },
+      ],
+      audit: 1,
+    });
+
+    // Countersigning still completes the tenancy agreement afterwards.
+    await applyEvent(setup.ids.tenancy, "completed", [
+      { email: "alice@example.test", status: "signed" },
+    ]);
+    expect((await statusOf(setup.tenancyRequest)).status).toBe("completed");
+  });
+
+  it("won't remove a guarantor who has signed, or without a reason", async () => {
+    const setup = await setUp();
+    await expect(
+      t.asUser(ALICE, () =>
+        db.query("select public.remove_guarantor($1, '  ')", [setup.guarantor]),
+      ),
+    ).rejects.toThrow(/Give a reason/);
+    await applyEvent(setup.ids.guarantor, "partly_signed", [
+      { email: "gwen@example.test", status: "signed" },
+    ]);
+    await expect(
+      t.asUser(ALICE, () =>
+        db.query("select public.remove_guarantor($1, 'Changed mind')", [setup.guarantor]),
+      ),
+    ).rejects.toThrow(/already signed/);
+  });
+
+  it("leaves finished requests alone and ticks the onboarding's agreement step on completion", async () => {
+    const setup = await setUp();
+    const onboarding = await t.asUser(
+      ALICE,
+      async () =>
+        (
+          await db.query<{ id: string }>("select public.start_onboarding($1) as id", [
+            setup.tenancy,
+          ])
+        ).rows[0]!.id,
+      true,
+    );
+    await applyEvent(setup.ids.tenancy, "completed", [
+      { email: "tess@example.test", status: "signed" },
+      { email: "alice@example.test", status: "signed" },
+    ]);
+    expect(await applyEvent(setup.ids.tenancy, "declined", [])).toBe("ignored");
+    expect((await statusOf(setup.tenancyRequest)).status).toBe("completed");
+
+    const step = await t.asUser(ALICE, async () => {
+      const { rows } = await db.query(
+        "select status from public.onboarding_steps where onboarding_id = $1 and kind = 'agreement'",
+        [onboarding],
+      );
+      return rows;
+    });
+    expect(step).toEqual([{ status: "done" }]);
+  });
+
+  it("allows one open request per agreement type, and keeps e-signing away from other organisations", async () => {
+    const setup = await setUp();
+    await expect(
+      t.asUser(ALICE, () =>
+        db.query(
+          `select public.record_signature_request($1, 'tenancy_agreement', null, null, 'fake', 'again', null, '[{"role":"tenant","name":"T","email":"t@example.test","order":1}]')`,
+          [setup.tenancy],
+        ),
+      ),
+    ).rejects.toThrow(/signature_requests_one_open_per_kind/);
+    await expect(
+      t.asUser(BOB, () =>
+        db.query("select public.remove_guarantor($1, 'Not mine')", [setup.guarantor]),
+      ),
+    ).rejects.toThrow(/Guarantor not found/);
+    await expect(
+      t.asAnon(() => db.query("select * from public.signature_requests")),
+    ).rejects.toThrow(/permission denied/);
+    await expect(t.asAnon(() => db.query("select * from private.esign_settings"))).rejects.toThrow(
+      /permission denied/,
+    );
   });
 });
 

@@ -29,6 +29,13 @@ test("auth pages link to each other", async ({ page }) => {
   await expect(page.getByRole("heading", { name: "Reset your password" })).toBeVisible();
 });
 
+test("the properties pages require a signed-in user", async ({ page }) => {
+  await page.goto("/properties");
+  await expect(page).toHaveURL(/\/log-in$/);
+  await page.goto("/properties/new");
+  await expect(page).toHaveURL(/\/log-in$/);
+});
+
 test("onboarding requires a signed-in user", async ({ page }) => {
   await page.goto("/onboarding");
   await expect(page).toHaveURL(/\/log-in$/);

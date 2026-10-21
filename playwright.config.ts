@@ -5,6 +5,8 @@ const baseURL = `http://localhost:${port}`;
 
 export default defineConfig({
   testDir: "./e2e",
+  // Signed-in tests against real Supabase: npm run test:e2e:live.
+  testIgnore: "live/**",
   fullyParallel: true,
   forbidOnly: !!process.env.CI,
   retries: process.env.CI ? 2 : 0,

@@ -22,6 +22,7 @@ export type TenancyRow = Pick<
   tenancy_tenants: (Pick<Tables["tenancy_tenants"]["Row"], "status"> & {
     tenants: Pick<Tables["tenants"]["Row"], "first_name" | "last_name" | "email" | "phone"> | null;
   })[];
+  onboardings?: Pick<Tables["onboardings"]["Row"], "id" | "status">[];
 };
 
 export type TenancyGroup = "upcoming" | "current" | "past";
@@ -47,6 +48,8 @@ export type TenancySummary = {
   canMoveIn: boolean;
   /** Notice given and the end date has come: time to confirm they've left. */
   canMarkEnded: boolean;
+  /** The onboarding in progress for this tenancy, if any. */
+  onboardingId: string | null;
   dates: TenancyDates;
 };
 
@@ -95,6 +98,8 @@ export function summariseTenancy(row: TenancyRow, today: string): TenancySummary
               : `since ${start}`,
     canMoveIn: row.status === "prospective" && row.start_date <= today,
     canMarkEnded: row.status === "ending" && row.end_date !== null && row.end_date <= today,
+    onboardingId:
+      row.onboardings?.find((onboarding) => onboarding.status === "in_progress")?.id ?? null,
     dates: {
       id: row.id,
       status: row.status,

@@ -5,7 +5,10 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useId, useState, useTransition } from "react";
 import { toast } from "sonner";
-import { moveTenancy } from "@/app/(app)/properties/[propertyId]/rooms/[roomId]/actions";
+import {
+  moveTenancy,
+  startOnboarding,
+} from "@/app/(app)/properties/[propertyId]/rooms/[roomId]/actions";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -17,13 +20,13 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
+import { Button, buttonVariants } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Sheet, SheetContent } from "@/components/ui/sheet";
 import { useMediaQuery } from "@/hooks/use-media-query";
 import type { TenancySummary } from "@/lib/tenancies/summary";
 import { cn } from "@/lib/utils";
-import { NoticeForm, TenancyForm } from "./tenancy-forms";
+import { MoveInDateForm, NoticeForm, TenancyForm } from "./tenancy-forms";
 
 export type RoomInfo = {
   id: string;
@@ -77,7 +80,7 @@ export function RoomTenancies({
   const router = useRouter();
   const pathname = usePathname();
   const wide = useMediaQuery("(min-width: 768px)");
-  const [panel, setPanel] = useState<"add" | "notice" | null>(null);
+  const [panel, setPanel] = useState<"add" | "notice" | "move-in" | null>(null);
   const [move, setMove] = useState<Move | null>(null);
   const [pending, startTransition] = useTransition();
   const selected = tenancies.find((tenancy) => tenancy.id === selectedId) ?? null;
@@ -148,6 +151,19 @@ export function RoomTenancies({
           hasCurrent={hasCurrent}
           onNotice={() => setPanel("notice")}
           onMove={setMove}
+          onChangeMoveIn={() => setPanel("move-in")}
+          onStartOnboarding={() =>
+            startTransition(async () => {
+              const result = await startOnboarding(selected.id);
+              if (result.status === "error") {
+                toast.error(result.message);
+                return;
+              }
+              toast.success(result.message);
+              router.push(`/applicants/${result.id}`);
+            })
+          }
+          pending={pending}
         />
       ) : (
         <div className="rounded-xl border border-dashed p-8 text-center text-sm text-muted-foreground">
@@ -174,6 +190,9 @@ export function RoomTenancies({
           ) : null}
           {panel === "notice" && selected ? (
             <NoticeForm tenancy={selected} today={today} onDone={done} />
+          ) : null}
+          {panel === "move-in" && selected ? (
+            <MoveInDateForm tenancy={selected} today={today} onDone={done} />
           ) : null}
         </SheetContent>
       </Sheet>
@@ -278,11 +297,17 @@ function TenancyPanel({
   hasCurrent,
   onNotice,
   onMove,
+  onChangeMoveIn,
+  onStartOnboarding,
+  pending,
 }: {
   tenancy: TenancySummary;
   hasCurrent: boolean;
   onNotice: () => void;
   onMove: (move: Move) => void;
+  onChangeMoveIn: () => void;
+  onStartOnboarding: () => void;
+  pending: boolean;
 }) {
   return (
     <Card data-testid="tenancy-panel">
@@ -387,6 +412,21 @@ function TenancyPanel({
                 disabled={!tenancy.canMoveIn || hasCurrent}
               >
                 Move in
+              </Button>
+              {tenancy.onboardingId ? (
+                <Link
+                  href={`/applicants/${tenancy.onboardingId}`}
+                  className={buttonVariants({ variant: "outline" })}
+                >
+                  View onboarding
+                </Link>
+              ) : (
+                <Button variant="outline" onClick={onStartOnboarding} disabled={pending}>
+                  Start onboarding
+                </Button>
+              )}
+              <Button variant="outline" onClick={onChangeMoveIn}>
+                Change move-in date
               </Button>
               <Button variant="ghost" onClick={() => onMove("cancel_tenancy")}>
                 Cancel tenancy

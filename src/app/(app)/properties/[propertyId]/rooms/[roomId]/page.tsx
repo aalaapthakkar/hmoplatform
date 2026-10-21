@@ -33,7 +33,8 @@ const ROOM_COLUMNS = `
   id, name, status, rent_pence, rent_frequency,
   tenancies (id, status, start_date, end_date, notice_date, end_reason,
     rent_pence, rent_frequency, rent_due_day, deposit_pence,
-    tenancy_tenants (status, tenants (first_name, last_name, email, phone)))
+    tenancy_tenants (status, tenants (first_name, last_name, email, phone)),
+    onboardings (id, status))
 `;
 
 async function Room({ params, searchParams }: Props) {

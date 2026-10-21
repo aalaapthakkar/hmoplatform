@@ -4,7 +4,9 @@ import type { PostgrestError } from "@supabase/supabase-js";
 import { z } from "zod";
 import type { ActionResult } from "@/app/(app)/properties/[propertyId]/actions";
 import { requireMembership } from "@/lib/auth/session";
+import { todayInLondon } from "@/lib/format";
 import { createClient } from "@/lib/supabase/server";
+import { dateField } from "@/lib/validation/dates";
 import { noticeSchema, tenancySchema } from "@/lib/validation/tenancy";
 
 const CHECK_AGAIN: ActionResult = {
@@ -60,11 +62,28 @@ export async function createTenancy(roomId: string, input: unknown): Promise<Act
   });
   if (error) return failure(error);
 
-  return {
-    status: "success",
-    message: `Tenancy for ${tenancy.firstName} ${tenancy.lastName} added.`,
-    id: tenancyId,
-  };
+  const name = `${tenancy.firstName} ${tenancy.lastName}`;
+  const wantsOnboarding =
+    typeof input === "object" && input !== null && "startOnboarding" in input
+      ? input.startOnboarding === "yes"
+      : false;
+  if (wantsOnboarding && tenancy.startDate > todayInLondon()) {
+    const onboarding = await supabase.rpc("start_onboarding", { p_tenancy_id: tenancyId });
+    if (onboarding.error) {
+      return {
+        status: "success",
+        message: `Tenancy for ${name} added, but onboarding couldn't start. Try Start onboarding.`,
+        id: tenancyId,
+      };
+    }
+    return {
+      status: "success",
+      message: `Tenancy for ${name} added and onboarding started.`,
+      id: tenancyId,
+    };
+  }
+
+  return { status: "success", message: `Tenancy for ${name} added.`, id: tenancyId };
 }
 
 /** Records (or corrects) notice on a current tenancy. */
@@ -104,4 +123,34 @@ export async function moveTenancy(
   if (error) return failure(error);
 
   return { status: "success", message: MOVES[move] };
+}
+
+/** Starts onboarding for an upcoming tenancy. The result's id is the new onboarding. */
+export async function startOnboarding(tenancyId: string): Promise<ActionResult> {
+  if (!id.safeParse(tenancyId).success) return NOT_FOUND;
+
+  await requireMembership();
+  const supabase = await createClient();
+  const { data, error } = await supabase.rpc("start_onboarding", { p_tenancy_id: tenancyId });
+  if (error) return failure(error);
+
+  return { status: "success", message: "Onboarding started.", id: data };
+}
+
+const moveInSchema = z.object({ startDate: dateField("move-in date") });
+
+/** Changes an upcoming tenancy's move-in date. */
+export async function changeMoveInDate(tenancyId: string, input: unknown): Promise<ActionResult> {
+  const parsed = moveInSchema.safeParse(input);
+  if (!parsed.success || !id.safeParse(tenancyId).success) return CHECK_AGAIN;
+
+  await requireMembership();
+  const supabase = await createClient();
+  const { error } = await supabase.rpc("change_move_in_date", {
+    p_tenancy_id: tenancyId,
+    p_start_date: parsed.data.startDate,
+  });
+  if (error) return failure(error);
+
+  return { status: "success", message: "Move-in date changed." };
 }

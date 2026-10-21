@@ -4,6 +4,7 @@ import { AlertTriangle } from "lucide-react";
 import { type FormEvent, useTransition } from "react";
 import { toast } from "sonner";
 import {
+  changeMoveInDate,
   createTenancy,
   recordNotice,
 } from "@/app/(app)/properties/[propertyId]/rooms/[roomId]/actions";
@@ -61,7 +62,7 @@ export function TenancyForm({
   today: string;
   onDone: (message: string, tenancyId?: string) => void;
 }) {
-  const form = useFormValues<TenancyFormValues>({
+  const form = useFormValues<TenancyFormValues & { startOnboarding: string }>({
     firstName: "",
     lastName: "",
     email: "",
@@ -71,6 +72,7 @@ export function TenancyForm({
     rentFrequency: roomFrequency,
     rentDueDay: defaultDueDay(roomFrequency, today),
     deposit: "",
+    startOnboarding: "yes",
   });
   const [pending, startTransition] = useTransition();
   const { values } = form;
@@ -202,6 +204,27 @@ export function TenancyForm({
           <PoundsInput {...form.field("deposit")} />
         </Field>
 
+        {slot?.ok && slot.status === "prospective" ? (
+          <label
+            htmlFor={`${form.prefix}startOnboarding`}
+            className="flex cursor-pointer items-start gap-3 rounded-lg border p-3 text-sm has-checked:border-primary has-checked:bg-primary/5"
+          >
+            <input
+              id={`${form.prefix}startOnboarding`}
+              type="checkbox"
+              checked={values.startOnboarding === "yes"}
+              onChange={(event) => form.set("startOnboarding", event.target.checked ? "yes" : "no")}
+              className="mt-0.5 size-4 accent-primary"
+            />
+            <span className="flex flex-col gap-0.5">
+              <span className="font-medium">Start onboarding</span>
+              <span className="text-muted-foreground">
+                Track the application, right to rent check, deposit and move-in.
+              </span>
+            </span>
+          </label>
+        ) : null}
+
         <Button type="submit" size="lg" disabled={pending}>
           {pending ? "Saving…" : "Add tenancy"}
         </Button>
@@ -283,6 +306,58 @@ export function NoticeForm({
 
         <Button type="submit" size="lg" disabled={pending}>
           {pending ? "Saving…" : existingNotice ? "Save notice" : "Record notice"}
+        </Button>
+      </form>
+    </FormIdPrefix>
+  );
+}
+
+export function MoveInDateForm({
+  tenancy,
+  today,
+  onDone,
+}: {
+  tenancy: TenancySummary;
+  today: string;
+  onDone: (message: string) => void;
+}) {
+  const form = useFormValues({ startDate: tenancy.dates.startDate });
+  const [pending, startTransition] = useTransition();
+
+  function handleSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!isRealDate(form.values.startDate)) {
+      form.setErrors({ startDate: ["Enter a real date, like 31/12/2026"] });
+      return;
+    }
+    if (form.values.startDate < today) {
+      form.setErrors({ startDate: ["Choose today or a later date"] });
+      return;
+    }
+    startTransition(async () => {
+      const result = await changeMoveInDate(tenancy.id, form.values);
+      if (result.status === "error") {
+        toast.error(result.message);
+        return;
+      }
+      onDone(result.message);
+    });
+  }
+
+  return (
+    <FormIdPrefix value={form.prefix}>
+      <form onSubmit={handleSubmit} noValidate className="flex flex-col gap-4 p-4">
+        <SheetHeader className="p-0">
+          <SheetTitle>Change the move-in date</SheetTitle>
+          <SheetDescription>
+            {tenancy.tenantNames} is due to move in on {tenancy.start}.
+          </SheetDescription>
+        </SheetHeader>
+        <Field name="startDate" label="New move-in date" error={form.errors.startDate}>
+          <Input {...form.field("startDate")} type="date" className="max-w-48" />
+        </Field>
+        <Button type="submit" size="lg" disabled={pending}>
+          {pending ? "Saving…" : "Change date"}
         </Button>
       </form>
     </FormIdPrefix>

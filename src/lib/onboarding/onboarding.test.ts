@@ -10,6 +10,7 @@ import {
   EMPTY_APPLICATION,
 } from "@/lib/validation/application";
 import { followUpDate, rightToRentSchema } from "@/lib/validation/right-to-rent";
+import { applicationRows } from "./application-view";
 import { createPortalToken, hashPortalToken, looksLikePortalToken } from "./portal-token";
 import {
   applicantStepLabel,
@@ -203,5 +204,28 @@ describe("right to rent", () => {
 
   it("reminds four weeks before permission ends", () => {
     expect(followUpDate("2027-06-30")).toBe("2027-06-02");
+  });
+});
+
+describe("applicationRows", () => {
+  it("labels answers for staff, formats them and skips blanks", () => {
+    expect(
+      applicationRows({
+        ...EMPTY_APPLICATION,
+        legalName: "Ava Applicant",
+        dateOfBirth: "2000-05-01",
+        annualIncome: "28000",
+        employmentStatus: "self_employed",
+        hasGuarantor: "no",
+        shareCode: "W2X4Y7Z9A",
+      }),
+    ).toEqual([
+      { label: "Full legal name", value: "Ava Applicant" },
+      { label: "Date of birth", value: "01/05/2000" },
+      { label: "Employment", value: "Self-employed" },
+      { label: "Yearly income", value: "£28,000.00" },
+      { label: "Guarantor", value: "No" },
+      { label: "Share code", value: "W2X 4Y7 Z9A" },
+    ]);
   });
 });

@@ -10,12 +10,14 @@ describe("detailsSchema", () => {
         otherAmenities: "Gym, wi-fi, ",
         houseRules: "",
         billsIncluded: "yes",
+        welcomePack: "# Welcome\n\n- Bins go out on Tuesdays",
       }),
     ).toEqual({
       description: "Bright five-bed near the university.",
       amenities: ["Wi-Fi", "Garden", "Gym"],
       houseRules: null,
       billsIncluded: true,
+      welcomePack: "# Welcome\n\n- Bins go out on Tuesdays",
     });
   });
 
@@ -26,6 +28,7 @@ describe("detailsSchema", () => {
       otherAmenities: "",
       houseRules: "",
       billsIncluded: "no",
+      welcomePack: "",
     });
     expect(result.success).toBe(false);
     expect(result.error!.issues[0]).toMatchObject({
@@ -43,6 +46,7 @@ describe("detailsFormValues", () => {
         amenities: ["wi-fi", "Gym", "Garden"],
         house_rules: "No smoking",
         bills_included: false,
+        welcome_pack: null,
       }),
     ).toEqual({
       description: "",
@@ -50,6 +54,7 @@ describe("detailsFormValues", () => {
       otherAmenities: "Gym",
       houseRules: "No smoking",
       billsIncluded: "no",
+      welcomePack: "",
     });
   });
 });

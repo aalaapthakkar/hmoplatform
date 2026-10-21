@@ -22,6 +22,8 @@ export type DetailsFormValues = {
   otherAmenities: string;
   houseRules: string;
   billsIncluded: string;
+  /** Shown to tenants in their portal. */
+  welcomePack: string;
 };
 
 const TOO_LONG = "Use 5,000 characters or fewer";
@@ -33,6 +35,7 @@ export const detailsSchema = z
     otherAmenities: z.string(),
     houseRules: optionalText(5000, TOO_LONG),
     billsIncluded: z.enum(["yes", "no"]).transform((value) => value === "yes"),
+    welcomePack: optionalText(20000, "Use 20,000 characters or fewer"),
   })
   .transform(({ amenities, otherAmenities, ...details }) => ({
     ...details,
@@ -55,6 +58,7 @@ export function detailsFormValues(property: {
   amenities: string[];
   house_rules: string | null;
   bills_included: boolean;
+  welcome_pack: string | null;
 }): DetailsFormValues {
   const common = new Set<string>(COMMON_AMENITIES.map((amenity) => amenity.toLowerCase()));
   return {
@@ -63,5 +67,6 @@ export function detailsFormValues(property: {
     otherAmenities: property.amenities.filter((a) => !common.has(a.toLowerCase())).join(", "),
     houseRules: property.house_rules ?? "",
     billsIncluded: property.bills_included ? "yes" : "no",
+    welcomePack: property.welcome_pack ?? "",
   };
 }

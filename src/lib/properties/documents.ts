@@ -9,7 +9,10 @@ type Tables = Database["public"]["Tables"];
 export type DocumentListRow = Pick<
   Tables["documents"]["Row"],
   "id" | "document_type" | "file_name" | "expiry_date" | "status" | "created_at"
-> & { users: Pick<Tables["users"]["Row"], "full_name" | "email"> | null };
+> & {
+  users: Pick<Tables["users"]["Row"], "full_name" | "email"> | null;
+  document_services?: Pick<Tables["document_services"]["Row"], "tenancy_id" | "served_at">[];
+};
 
 export type ExpiryState = "none" | "valid" | "soon" | "expired";
 
@@ -22,6 +25,8 @@ export type DocumentSummary = {
   uploadedBy: string;
   uploadedOn: string;
   active: boolean;
+  /** Tenancies it has been given to, through their portal. */
+  servedTo: { tenancyId: string; servedOn: string }[];
 };
 
 const SOON_DAYS = 30;
@@ -44,5 +49,9 @@ export function summariseDocument(row: DocumentListRow, today: string): Document
     uploadedBy: row.users?.full_name ?? row.users?.email ?? "Someone who has left",
     uploadedOn: formatUkDate(row.created_at),
     active: row.status === "active",
+    servedTo: (row.document_services ?? []).map((service) => ({
+      tenancyId: service.tenancy_id,
+      servedOn: formatUkDate(service.served_at),
+    })),
   };
 }

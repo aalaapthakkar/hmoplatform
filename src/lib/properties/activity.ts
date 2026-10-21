@@ -53,6 +53,7 @@ const FIELD_LABELS: Record<string, string> = {
   description: "Description",
   amenities: "Amenities",
   house_rules: "House rules",
+  welcome_pack: "Welcome pack",
   bills_included: "Bills included",
   document_type: "Type",
   file_name: "File",
@@ -68,7 +69,7 @@ const FIELD_LABELS: Record<string, string> = {
 };
 
 /** Long text is described as changed, without repeating it. */
-const LONG_TEXT = new Set(["description", "house_rules"]);
+const LONG_TEXT = new Set(["description", "house_rules", "welcome_pack"]);
 
 const VALUE_LABELS: Record<string, Record<string, string>> = {
   status: {

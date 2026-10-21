@@ -123,6 +123,15 @@ export function DetailsSection({ propertyId, initial }: DetailsSectionProps) {
             </span>
           </label>
 
+          <Field
+            name="welcomePack"
+            label="Welcome pack for tenants"
+            hint="Tenants see this in their portal: bin days, Wi-Fi, where the meters and stopcock are, who to call. Start a line with # for a heading or - for a bullet point."
+            error={form.errors.welcomePack}
+          >
+            <Textarea {...form.field("welcomePack")} rows={10} />
+          </Field>
+
           <div>
             <Button type="submit" size="lg" disabled={pending}>
               {pending ? "Saving…" : "Save details"}

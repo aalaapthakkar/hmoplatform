@@ -4,7 +4,11 @@ import { Download, FileText, Upload } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { type FormEvent, useId, useRef, useState, useTransition } from "react";
 import { toast } from "sonner";
-import { archiveDocument, recordDocument } from "@/app/(app)/properties/[propertyId]/actions";
+import {
+  archiveDocument,
+  recordDocument,
+  serveDocument,
+} from "@/app/(app)/properties/[propertyId]/actions";
 import { Field, FormIdPrefix, selectClass, useFormValues } from "@/components/forms/fields";
 import {
   AlertDialog,
@@ -20,6 +24,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import type { DocumentSummary, ExpiryState } from "@/lib/properties/documents";
 import { createClient } from "@/lib/supabase/client";
 import { cn } from "@/lib/utils";
@@ -38,17 +43,53 @@ type DocumentsSectionProps = {
   propertyId: string;
   documents: DocumentSummary[];
   archived: DocumentSummary[];
+  /** Tenancies here; documents can be given to the ones that haven't ended. */
+  tenancies: ServableTenancy[];
 };
+
+export type ServableTenancy = { id: string; label: string; open: boolean };
 
 export function DocumentsSection({
   orgId,
   propertyId,
   documents,
   archived,
+  tenancies,
 }: DocumentsSectionProps) {
   const router = useRouter();
   const [archiving, setArchiving] = useState<DocumentSummary | null>(null);
+  const [serving, setServing] = useState<DocumentSummary | null>(null);
+  const [servingTo, setServingTo] = useState("");
   const [pending, startTransition] = useTransition();
+  const serveId = useId();
+  const tenancyLabels = new Map(tenancies.map((tenancy) => [tenancy.id, tenancy.label]));
+  const servable = tenancies.filter((tenancy) => tenancy.open);
+
+  function startServing(document: DocumentSummary) {
+    const notYet = servable.find(
+      (tenancy) => !document.servedTo.some((served) => served.tenancyId === tenancy.id),
+    );
+    setServingTo(notYet?.id ?? "");
+    setServing(document);
+  }
+
+  function confirmServe() {
+    const document = serving;
+    if (!document || !servingTo) return;
+    startTransition(async () => {
+      const result = await serveDocument(propertyId, {
+        documentId: document.id,
+        tenancyId: servingTo,
+      });
+      if (result.status === "error") {
+        toast.error(result.message);
+        return;
+      }
+      toast.success(result.message);
+      setServing(null);
+      router.refresh();
+    });
+  }
 
   function confirmArchive() {
     const document = archiving;
@@ -92,6 +133,11 @@ export function DocumentsSection({
                 propertyId={propertyId}
                 document={document}
                 onArchive={() => setArchiving(document)}
+                onServe={servable.length > 0 ? () => startServing(document) : undefined}
+                servedTo={document.servedTo.map(
+                  (served) =>
+                    `${tenancyLabels.get(served.tenancyId) ?? "a past tenancy"} on ${served.servedOn}`,
+                )}
               />
             </li>
           ))}
@@ -112,6 +158,45 @@ export function DocumentsSection({
           </ul>
         </details>
       ) : null}
+
+      <AlertDialog
+        open={serving !== null}
+        onOpenChange={(open) => (open ? null : setServing(null))}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Give {serving?.fileName} to a tenant</AlertDialogTitle>
+            <AlertDialogDescription>
+              It appears in their tenant portal, where they can download it. The date is kept as a
+              record that you gave it to them.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <div className="flex flex-col gap-2">
+            <Label htmlFor={serveId}>Tenancy</Label>
+            <select
+              id={serveId}
+              value={servingTo}
+              onChange={(event) => setServingTo(event.target.value)}
+              className={selectClass}
+            >
+              <option value="" disabled>
+                Choose a tenancy
+              </option>
+              {servable.map((tenancy) => (
+                <option key={tenancy.id} value={tenancy.id}>
+                  {tenancy.label}
+                </option>
+              ))}
+            </select>
+          </div>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={pending}>Cancel</AlertDialogCancel>
+            <AlertDialogAction disabled={pending || !servingTo} onClick={confirmServe}>
+              {pending ? "Giving…" : "Give to tenant"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       <AlertDialog
         open={archiving !== null}
@@ -151,10 +236,15 @@ function DocumentRow({
   propertyId,
   document,
   onArchive,
+  onServe,
+  servedTo = [],
 }: {
   propertyId: string;
   document: DocumentSummary;
   onArchive?: () => void;
+  onServe?: () => void;
+  /** "Priya Shah (Room 1) on 01/09/2026". */
+  servedTo?: string[];
 }) {
   const badge = EXPIRY_BADGES[document.expiryState];
   return (
@@ -171,6 +261,11 @@ function DocumentRow({
             {document.expiry ? `Expires ${document.expiry} · ` : ""}
             Uploaded {document.uploadedOn} by {document.uploadedBy}
           </p>
+          {servedTo.length > 0 ? (
+            <p className="text-xs text-muted-foreground" data-testid="served-to">
+              Given to {servedTo.join("; ")}
+            </p>
+          ) : null}
         </div>
         <div className="flex gap-2">
           <a
@@ -181,6 +276,15 @@ function DocumentRow({
             <Download aria-hidden />
             Download
           </a>
+          {onServe ? (
+            <Button
+              variant="outline"
+              onClick={onServe}
+              aria-label={`Give ${document.fileName} to a tenant`}
+            >
+              Give to tenant
+            </Button>
+          ) : null}
           {onArchive ? (
             <Button variant="ghost" onClick={onArchive} aria-label={`Archive ${document.fileName}`}>
               Archive

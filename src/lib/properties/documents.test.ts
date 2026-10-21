@@ -27,6 +27,7 @@ describe("summariseDocument", () => {
           status: "active",
           created_at: "2025-10-01T09:00:00Z",
           users: { full_name: null, email: "alice@example.com" },
+          document_services: [{ tenancy_id: "t1", served_at: "2025-10-02T09:00:00Z" }],
         },
         TODAY,
       ),
@@ -39,6 +40,7 @@ describe("summariseDocument", () => {
       uploadedBy: "alice@example.com",
       uploadedOn: "01/10/2025",
       active: true,
+      servedTo: [{ tenancyId: "t1", servedOn: "02/10/2025" }],
     });
   });
 });

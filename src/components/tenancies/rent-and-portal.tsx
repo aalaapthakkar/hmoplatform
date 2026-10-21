@@ -74,6 +74,14 @@ export function RentAndPortal({
             />
           ))
         )}
+        <div>
+          <Link
+            href={`/messages/${tenancy.id}`}
+            className={buttonVariants({ variant: "outline", size: "sm" })}
+          >
+            Messages
+          </Link>
+        </div>
       </section>
     </div>
   );

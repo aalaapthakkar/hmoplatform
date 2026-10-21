@@ -130,7 +130,7 @@ export async function updateDetails(propertyId: string, input: unknown): Promise
 
   const membership = await requireMembership();
   const supabase = await createClient();
-  const { description, amenities, houseRules, billsIncluded } = parsed.data;
+  const { description, amenities, houseRules, billsIncluded, welcomePack } = parsed.data;
   const { data, error } = await supabase
     .from("properties")
     .update({
@@ -138,6 +138,7 @@ export async function updateDetails(propertyId: string, input: unknown): Promise
       amenities,
       house_rules: houseRules,
       bills_included: billsIncluded,
+      welcome_pack: welcomePack,
     })
     .eq("id", propertyId)
     .eq("org_id", membership.orgId)
@@ -209,4 +210,47 @@ export async function archiveDocument(
   if (data.length === 0) return DOCUMENT_NOT_FOUND;
 
   return { status: "success", message: `${data[0]!.file_name} archived.` };
+}
+
+const serveSchema = z.object({ documentId: z.uuid(), tenancyId: z.uuid() });
+
+/**
+ * Gives a property document to a tenancy's tenants: it appears in their
+ * portal, and the date it was served is kept.
+ */
+export async function serveDocument(propertyId: string, input: unknown): Promise<ActionResult> {
+  const parsed = serveSchema.safeParse(input);
+  if (!parsed.success || !id.safeParse(propertyId).success) return DOCUMENT_NOT_FOUND;
+
+  const [membership, user] = await Promise.all([requireMembership(), getCurrentUser()]);
+  const supabase = await createClient();
+  const [{ data: document }, { data: tenancy }] = await Promise.all([
+    supabase
+      .from("documents")
+      .select("id")
+      .eq("id", parsed.data.documentId)
+      .eq("property_id", propertyId)
+      .eq("status", "active")
+      .maybeSingle(),
+    supabase
+      .from("tenancies")
+      .select("id, rooms!inner (property_id)")
+      .eq("id", parsed.data.tenancyId)
+      .eq("rooms.property_id", propertyId)
+      .maybeSingle(),
+  ]);
+  if (!document || !tenancy) return DOCUMENT_NOT_FOUND;
+
+  const { error } = await supabase.from("document_services").insert({
+    org_id: membership.orgId,
+    document_id: parsed.data.documentId,
+    tenancy_id: parsed.data.tenancyId,
+    method: "portal",
+    served_by: user.id,
+  });
+  if (error?.code === "23505") {
+    return { status: "error", message: "They already have this document." };
+  }
+  if (error) return TRY_AGAIN;
+  return { status: "success", message: "Document given. It's in their portal now." };
 }

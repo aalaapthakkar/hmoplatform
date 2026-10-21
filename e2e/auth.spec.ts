@@ -60,3 +60,17 @@ test("an expired email link shows a friendly message", async ({ page }) => {
   await expect(page).toHaveURL(/\/log-in\?error=link$/);
   await expect(page.getByText("That link has expired or has already been used.")).toBeVisible();
 });
+
+test("onboarding pages need a signed-in user, but the applicant portal doesn't", async ({
+  page,
+}) => {
+  await page.goto("/applicants");
+  await expect(page).toHaveURL(/\/log-in$/);
+  await page.goto("/applicants/0f8fad5b-d9cb-469f-a165-70867728950e");
+  await expect(page).toHaveURL(/\/log-in$/);
+
+  const response = await page.goto("/apply/not-a-real-link");
+  await expect(page).toHaveURL(/\/apply\/not-a-real-link$/);
+  await expect(page.getByTestId("link-invalid")).toBeVisible();
+  expect(response?.headers()["referrer-policy"]).toBe("no-referrer");
+});

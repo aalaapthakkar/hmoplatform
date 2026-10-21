@@ -56,7 +56,7 @@ test("a room's tenancies: let, line up the next tenant, give notice, end and mov
 
   // A tenancy from today is current, periodic, and lets the room.
   await addTenancy(page, "Asha", "Patel", londonDate());
-  await expect(page.getByText("Tenancy for Asha Patel added.")).toBeVisible();
+  await expect(page.getByText(/^Tenancy for Asha Patel added/)).toBeVisible();
   const panel = page.getByTestId("tenancy-panel");
   await expect(panel).toContainText("Current");
   await expect(panel).toContainText("Periodic (no fixed end date)");
@@ -77,7 +77,7 @@ test("a room's tenancies: let, line up the next tenant, give notice, end and mov
 
   // One upcoming tenancy can be lined up; then Add tenancy goes away.
   await addTenancy(page, "Ben", "Okoro", londonDate(14));
-  await expect(page.getByText("Tenancy for Ben Okoro added.")).toBeVisible();
+  await expect(page.getByText(/^Tenancy for Ben Okoro added/)).toBeVisible();
   await expect(page.getByTestId("tenancy-panel")).toContainText("Upcoming");
   await expect(page.getByRole("button", { name: "Add tenancy" })).toHaveCount(0);
 
@@ -111,7 +111,7 @@ test("a room's tenancies: let, line up the next tenant, give notice, end and mov
 
   // A new tenant from today moves straight in.
   await addTenancy(page, "Cara", "Lewis", londonDate());
-  await expect(page.getByText("Tenancy for Cara Lewis added.")).toBeVisible();
+  await expect(page.getByText(/^Tenancy for Cara Lewis added/)).toBeVisible();
   await expect(panel).toContainText("Current");
 
   // The switcher reaches the past and cancelled tenancies.

@@ -154,6 +154,40 @@ describe("describeActivity", () => {
     ]);
   });
 
+  it("describes a removed guarantor requirement with its reason, and signing", () => {
+    const guarantor = {
+      tenancy_id: "t1",
+      name: "Gwen Guarantor",
+      status: "required",
+      removed_reason: null,
+    };
+    expect(
+      describeActivity(
+        row({
+          table_name: "tenancy_guarantors",
+          before: guarantor,
+          after: { ...guarantor, status: "removed", removed_reason: "Paid upfront" },
+        }),
+        names,
+      ),
+    ).toMatchObject({
+      subject: "Gwen Guarantor",
+      summary: "Guarantor requirement removed",
+      changes: [{ label: "Reason", from: null, to: "Paid upfront" }],
+    });
+    const request = { kind: "tenancy_agreement", status: "sent", signed_document_id: null };
+    expect(
+      describeActivity(
+        row({
+          table_name: "signature_requests",
+          before: request,
+          after: { ...request, status: "completed" },
+        }),
+        names,
+      ),
+    ).toMatchObject({ subject: "Tenancy agreement", summary: "Signed by everyone" });
+  });
+
   it("names changes made without a signed-in user", () => {
     expect(describeActivity(row({ actor_name: null, after: room }), names).who).toBe("The system");
   });

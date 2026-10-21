@@ -23,6 +23,32 @@ export type TenancyRow = Pick<
     tenants: Pick<Tables["tenants"]["Row"], "first_name" | "last_name" | "email" | "phone"> | null;
   })[];
   onboardings?: Pick<Tables["onboardings"]["Row"], "id" | "status">[];
+  tenancy_guarantors?: GuarantorRow[];
+  signature_requests?: SignatureRequestRow[];
+};
+
+export type GuarantorRow = Pick<
+  Tables["tenancy_guarantors"]["Row"],
+  "id" | "name" | "email" | "phone" | "address" | "status" | "removed_at" | "removed_reason"
+>;
+
+export type SignatureRequestRow = Pick<
+  Tables["signature_requests"]["Row"],
+  | "id"
+  | "kind"
+  | "status"
+  | "provider"
+  | "provider_request_id"
+  | "sent_at"
+  | "completed_at"
+  | "cancelled_reason"
+  | "signed_document_id"
+  | "unsigned_document_id"
+> & {
+  signature_request_signers: Pick<
+    Tables["signature_request_signers"]["Row"],
+    "role" | "name" | "email" | "status" | "signed_at" | "signing_order"
+  >[];
 };
 
 export type TenancyGroup = "upcoming" | "current" | "past";
@@ -50,6 +76,10 @@ export type TenancySummary = {
   canMarkEnded: boolean;
   /** The onboarding in progress for this tenancy, if any. */
   onboardingId: string | null;
+  guarantor: GuarantorRow | null;
+  removedGuarantors: GuarantorRow[];
+  /** Newest first. */
+  signatureRequests: SignatureRequestRow[];
   dates: TenancyDates;
 };
 
@@ -100,6 +130,12 @@ export function summariseTenancy(row: TenancyRow, today: string): TenancySummary
     canMarkEnded: row.status === "ending" && row.end_date !== null && row.end_date <= today,
     onboardingId:
       row.onboardings?.find((onboarding) => onboarding.status === "in_progress")?.id ?? null,
+    guarantor: row.tenancy_guarantors?.find((guarantor) => guarantor.status === "required") ?? null,
+    removedGuarantors:
+      row.tenancy_guarantors?.filter((guarantor) => guarantor.status === "removed") ?? [],
+    signatureRequests: [...(row.signature_requests ?? [])].sort((a, b) =>
+      b.sent_at.localeCompare(a.sent_at),
+    ),
     dates: {
       id: row.id,
       status: row.status,

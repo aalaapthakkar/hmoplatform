@@ -197,6 +197,48 @@ export function describeActivity(row: ActivityRow, names: ActivityNames): Activi
       const details = move ? changes.filter((change) => change.label !== "Status") : changes;
       return { ...base, subject, summary: move ?? "Tenancy updated", changes: details };
     }
+    case "tenancy_guarantors": {
+      const name = text(current.name) ?? "The guarantor";
+      if (row.action === "insert") return { ...base, subject: name, summary: "Added as guarantor" };
+      if (after.status === "removed" && before.status !== "removed") {
+        const reason = text(after.removed_reason);
+        return {
+          ...base,
+          subject: name,
+          summary: "Guarantor requirement removed",
+          changes: reason ? [{ label: "Reason", from: null, to: reason }] : [],
+        };
+      }
+      return { ...base, subject: name, summary: "Guarantor updated", changes };
+    }
+    case "signature_requests": {
+      const kind = text(current.kind);
+      const subject = kind === "guarantor_agreement" ? "Guarantor agreement" : "Tenancy agreement";
+      if (row.action === "insert") return { ...base, subject, summary: "Sent for signature" };
+      const moves: Record<string, string> = {
+        partly_signed: "Partly signed",
+        completed: "Signed by everyone",
+        declined: "Declined",
+        cancelled: "Cancelled",
+      };
+      const move = before.status !== after.status ? moves[text(after.status) ?? ""] : undefined;
+      const reason = text(after.cancelled_reason);
+      if (move) {
+        return {
+          ...base,
+          subject,
+          summary: move,
+          changes:
+            after.status === "cancelled" && reason
+              ? [{ label: "Why", from: null, to: reason }]
+              : [],
+        };
+      }
+      if (after.signed_document_id && !before.signed_document_id) {
+        return { ...base, subject, summary: "Signed copy saved to documents" };
+      }
+      return { ...base, subject, summary: "Signature request updated", changes: [] };
+    }
     case "tenancy_tenants": {
       const tenancyId = text(current.tenancy_id);
       const roomId = tenancyId ? names.tenancyRooms.get(tenancyId) : undefined;

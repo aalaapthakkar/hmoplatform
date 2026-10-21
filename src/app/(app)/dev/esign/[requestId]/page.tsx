@@ -30,6 +30,10 @@ async function Signers({ params }: Pick<PageProps<"/dev/esign/[requestId]">, "pa
   if (!provider) notFound();
   const request = await provider.describe(requestId).catch(() => null);
   if (!request) notFound();
+  // Signers go in order: only the next one can sign.
+  const next = [...request.signers]
+    .sort((a, b) => a.order - b.order)
+    .find((signer) => signer.status === "awaiting");
 
   return (
     <ul className="flex flex-col gap-2">
@@ -43,8 +47,12 @@ async function Signers({ params }: Pick<PageProps<"/dev/esign/[requestId]">, "pa
           </span>
           {signer.status === "signed" ? (
             <span className="text-muted-foreground">Signed</span>
-          ) : (
+          ) : signer.email === next?.email && !request.cancelled ? (
             <FakeSignButton requestId={requestId} email={signer.email} name={signer.name} />
+          ) : (
+            <span className="text-muted-foreground">
+              {request.cancelled ? "Cancelled" : "Waiting for their turn"}
+            </span>
           )}
         </li>
       ))}

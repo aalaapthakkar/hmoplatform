@@ -19,6 +19,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
+import { AgreementSection } from "@/components/esign/agreement-section";
 import { Badge } from "@/components/ui/badge";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -445,6 +446,16 @@ function TenancyPanel({
           <p className="-mt-2 text-xs text-muted-foreground">
             You can mark it as ended from {tenancy.end}.
           </p>
+        ) : null}
+
+        {tenancy.status !== "cancelled" ? (
+          <AgreementSection
+            tenancyId={tenancy.id}
+            editable={["prospective", "active", "ending"].includes(tenancy.status)}
+            guarantor={tenancy.guarantor}
+            removedGuarantors={tenancy.removedGuarantors}
+            requests={tenancy.signatureRequests}
+          />
         ) : null}
       </CardContent>
     </Card>

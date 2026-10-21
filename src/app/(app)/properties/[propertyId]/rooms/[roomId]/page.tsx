@@ -34,7 +34,11 @@ const ROOM_COLUMNS = `
   tenancies (id, status, start_date, end_date, notice_date, end_reason,
     rent_pence, rent_frequency, rent_due_day, deposit_pence,
     tenancy_tenants (status, tenants (first_name, last_name, email, phone)),
-    onboardings (id, status))
+    onboardings (id, status),
+    tenancy_guarantors (id, name, email, phone, address, status, removed_at, removed_reason),
+    signature_requests (id, kind, status, provider, provider_request_id, sent_at, completed_at,
+      cancelled_reason, signed_document_id, unsigned_document_id,
+      signature_request_signers (role, name, email, status, signed_at, signing_order)))
 `;
 
 async function Room({ params, searchParams }: Props) {

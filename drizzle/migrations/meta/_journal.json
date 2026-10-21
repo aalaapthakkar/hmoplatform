@@ -134,6 +134,13 @@
       "when": 1792612091997,
       "tag": "0018_esign_functions",
       "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "7",
+      "when": 1792613298090,
+      "tag": "0019_activity_includes_signing",
+      "breakpoints": true
     }
   ]
 }

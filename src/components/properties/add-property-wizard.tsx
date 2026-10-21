@@ -4,9 +4,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
   type ChangeEvent,
-  type ComponentProps,
   type FormEvent,
-  type ReactNode,
   useEffect,
   useRef,
   useState,
@@ -15,9 +13,9 @@ import {
 import { toast } from "sonner";
 import { z } from "zod";
 import { createProperty } from "@/app/(app)/properties/new/actions";
+import { Choice, Choices, Field, PoundsInput, selectClass } from "@/components/forms/fields";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { lookupPostcode } from "@/lib/postcodes";
 import { cn } from "@/lib/utils";
 import {
@@ -500,115 +498,6 @@ export function AddPropertyWizard({ owners, existingTags }: AddPropertyWizardPro
         </Link>
       </div>
     </form>
-  );
-}
-
-const selectClass =
-  "h-8 w-full rounded-lg border border-input bg-background px-2.5 text-sm outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 aria-invalid:border-destructive dark:bg-input/30";
-
-function Field({
-  name,
-  label,
-  hint,
-  error,
-  children,
-}: {
-  name: string;
-  label: string;
-  hint?: ReactNode;
-  error?: string[];
-  children: ReactNode;
-}) {
-  return (
-    <div className="flex flex-col gap-2">
-      <Label htmlFor={name}>{label}</Label>
-      {children}
-      <div id={`${name}-hint`} className="text-xs text-muted-foreground empty:hidden">
-        {hint}
-      </div>
-      {error?.[0] ? (
-        <p id={`${name}-error`} className="text-xs text-destructive">
-          {error[0]}
-        </p>
-      ) : null}
-    </div>
-  );
-}
-
-function PoundsInput(props: ComponentProps<typeof Input>) {
-  return (
-    <div className="flex max-w-40 items-center gap-1.5">
-      <span aria-hidden className="text-muted-foreground">
-        £
-      </span>
-      <Input {...props} inputMode="decimal" autoComplete="off" />
-    </div>
-  );
-}
-
-function Choices({
-  legend,
-  name,
-  error,
-  children,
-}: {
-  legend: string;
-  name: string;
-  error?: string[];
-  children: ReactNode;
-}) {
-  return (
-    <fieldset
-      className="flex flex-col gap-2"
-      aria-describedby={error?.[0] ? `${name}-error` : undefined}
-    >
-      <legend className="mb-2 text-sm font-medium">{legend}</legend>
-      <div className="grid gap-2 sm:grid-cols-[repeat(auto-fit,minmax(10rem,1fr))]">{children}</div>
-      {error?.[0] ? (
-        <p id={`${name}-error`} className="text-xs text-destructive">
-          {error[0]}
-        </p>
-      ) : null}
-    </fieldset>
-  );
-}
-
-function Choice({
-  name,
-  value,
-  checked,
-  onChange,
-  title,
-  description,
-}: {
-  name: string;
-  value: string;
-  checked: boolean;
-  onChange: () => void;
-  title: string;
-  description?: string;
-}) {
-  return (
-    <label
-      className={cn(
-        "flex cursor-pointer items-start gap-3 rounded-lg border p-3 text-sm transition-colors hover:bg-muted/50",
-        "has-checked:border-primary has-checked:bg-primary/5 has-focus-visible:ring-3 has-focus-visible:ring-ring/50",
-      )}
-    >
-      <input
-        id={`${name}-${value}`}
-        type="radio"
-        name={name}
-        value={value}
-        checked={checked}
-        onChange={onChange}
-        className="mt-0.5 accent-primary"
-      />
-      <span className="flex flex-col gap-0.5">
-        <span className="font-medium">{title}</span>
-        {description ? <span className="text-muted-foreground">{description}</span> : null}
-      </span>
-    </label>
   );
 }
 

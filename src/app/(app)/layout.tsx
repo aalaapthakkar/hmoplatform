@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { type ReactNode, Suspense } from "react";
 import { MobileNav } from "@/components/app-shell/mobile-nav";
-import { SidebarNav } from "@/components/app-shell/sidebar-nav";
+import { SidebarNav, SidebarNavFallback } from "@/components/app-shell/sidebar-nav";
 import { TopBarDetails, TopBarDetailsFallback } from "@/components/app-shell/top-bar";
 
 export default function AppLayout({ children }: { children: ReactNode }) {
@@ -11,7 +11,9 @@ export default function AppLayout({ children }: { children: ReactNode }) {
         <Link href="/dashboard" className="flex h-14 items-center border-b px-6 font-semibold">
           HMO Platform
         </Link>
-        <SidebarNav />
+        <Suspense fallback={<SidebarNavFallback />}>
+          <SidebarNav />
+        </Suspense>
       </aside>
 
       <div className="flex min-w-0 flex-1 flex-col">

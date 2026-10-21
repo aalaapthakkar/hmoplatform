@@ -42,14 +42,15 @@ export function parseTags(value: string): string[] {
   return tags;
 }
 
-const optionalText = (max: number, message: string) =>
+export const optionalText = (max: number, message: string) =>
   z
     .string()
     .trim()
     .max(max, message)
     .transform((value) => value || null);
 
-const amount = (label: string) =>
+/** A required amount in pounds, as integer pence. */
+export const poundsField = (label: string) =>
   z
     .string()
     .trim()
@@ -63,7 +64,8 @@ const amount = (label: string) =>
       return pence;
     });
 
-const optionalAmount = z
+/** An optional amount in pounds, as integer pence or null. */
+export const optionalPoundsField = z
   .string()
   .trim()
   .transform((value, ctx) => {
@@ -120,7 +122,7 @@ export const rentalStepSchema = z.object({
           `Enter a number from 1 to ${MAX_ROOMS}`,
         ),
     ),
-  roomRent: optionalAmount,
+  roomRent: optionalPoundsField,
 });
 
 const newOwnerFields = {
@@ -139,9 +141,10 @@ const newOwnerFields = {
 };
 
 const existingOwnerFields = { ownerId: z.uuid("Choose an owner") };
-const headRentFields = { headRent: amount("head rent") };
+const headRentFields = { headRent: poundsField("head rent") };
 
-const tagsField = z
+/** Comma-separated tags, as a de-duplicated list. */
+export const tagsField = z
   .string()
   .transform(parseTags)
   .refine((tags) => tags.length <= 10, "Use 10 tags or fewer")
@@ -154,40 +157,45 @@ const managed = z.literal("managed");
 const masterLease = z.literal("master_lease");
 
 /**
- * Step 3: who owns it and how the org holds it. A managed property needs an
- * owner, existing or new; on a master lease the landlord is optional.
+ * How the org holds a property. A managed property needs an owner, existing
+ * or new; on a master lease the landlord is optional.
  */
+export const ownershipSchema = z.discriminatedUnion(
+  "ownershipType",
+  [
+    z.object({ ownershipType: z.literal("owned") }),
+    z.discriminatedUnion("ownerMode", [
+      z.object({
+        ownershipType: managed,
+        ownerMode: z.literal("existing"),
+        ...existingOwnerFields,
+      }),
+      z.object({ ownershipType: managed, ownerMode: z.literal("new"), ...newOwnerFields }),
+    ]),
+    z.discriminatedUnion("ownerMode", [
+      z.object({ ownershipType: masterLease, ownerMode: z.literal("none"), ...headRentFields }),
+      z.object({
+        ownershipType: masterLease,
+        ownerMode: z.literal("existing"),
+        ...headRentFields,
+        ...existingOwnerFields,
+      }),
+      z.object({
+        ownershipType: masterLease,
+        ownerMode: z.literal("new"),
+        ...headRentFields,
+        ...newOwnerFields,
+      }),
+    ]),
+  ],
+  { error: () => "Choose how you hold this property" },
+);
+
+export type Ownership = z.infer<typeof ownershipSchema>;
+
+/** Step 3: who owns it and how the org holds it, plus tags. */
 export const relationshipStepSchema = z.intersection(
-  z.discriminatedUnion(
-    "ownershipType",
-    [
-      z.object({ ownershipType: z.literal("owned") }),
-      z.discriminatedUnion("ownerMode", [
-        z.object({
-          ownershipType: managed,
-          ownerMode: z.literal("existing"),
-          ...existingOwnerFields,
-        }),
-        z.object({ ownershipType: managed, ownerMode: z.literal("new"), ...newOwnerFields }),
-      ]),
-      z.discriminatedUnion("ownerMode", [
-        z.object({ ownershipType: masterLease, ownerMode: z.literal("none"), ...headRentFields }),
-        z.object({
-          ownershipType: masterLease,
-          ownerMode: z.literal("existing"),
-          ...headRentFields,
-          ...existingOwnerFields,
-        }),
-        z.object({
-          ownershipType: masterLease,
-          ownerMode: z.literal("new"),
-          ...headRentFields,
-          ...newOwnerFields,
-        }),
-      ]),
-    ],
-    { error: () => "Choose how you hold this property" },
-  ),
+  ownershipSchema,
   z.object({ tags: tagsField }),
 );
 
@@ -220,20 +228,32 @@ export type PropertyWizardValues = {
   tags: string;
 };
 
-/** Arguments for the create_property database function. */
-export function toCreatePropertyArgs(orgId: string, property: NewProperty) {
+/** The owner arguments shared by create_property and set_property_ownership. */
+export function ownerArgs(ownership: Ownership) {
   const owner =
-    "ownerMode" in property && property.ownerMode === "existing"
-      ? { id: property.ownerId, name: null, email: null, phone: null }
-      : "ownerMode" in property && property.ownerMode === "new"
+    "ownerMode" in ownership && ownership.ownerMode === "existing"
+      ? { id: ownership.ownerId, name: null, email: null, phone: null }
+      : "ownerMode" in ownership && ownership.ownerMode === "new"
         ? {
             id: null,
-            name: property.ownerName,
-            email: property.ownerEmail,
-            phone: property.ownerPhone,
+            name: ownership.ownerName,
+            email: ownership.ownerEmail,
+            phone: ownership.ownerPhone,
           }
         : { id: null, name: null, email: null, phone: null };
 
+  return {
+    p_ownership_type: ownership.ownershipType,
+    p_head_rent_pence: ownership.ownershipType === "master_lease" ? ownership.headRent : null,
+    p_owner_id: owner.id,
+    p_new_owner_name: owner.name,
+    p_new_owner_email: owner.email,
+    p_new_owner_phone: owner.phone,
+  };
+}
+
+/** Arguments for the create_property database function. */
+export function toCreatePropertyArgs(orgId: string, property: NewProperty) {
   return {
     p_org_id: orgId,
     p_address_line_1: property.addressLine1,
@@ -245,12 +265,7 @@ export function toCreatePropertyArgs(orgId: string, property: NewProperty) {
     p_letting_type: property.lettingType,
     p_room_count: property.roomCount,
     p_room_rent_pence: property.roomRent,
-    p_ownership_type: property.ownershipType,
-    p_head_rent_pence: property.ownershipType === "master_lease" ? property.headRent : null,
-    p_owner_id: owner.id,
-    p_new_owner_name: owner.name,
-    p_new_owner_email: owner.email,
-    p_new_owner_phone: owner.phone,
+    ...ownerArgs(property),
     p_tags: property.tags,
   };
 }

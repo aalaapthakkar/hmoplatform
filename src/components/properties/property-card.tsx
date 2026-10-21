@@ -1,4 +1,5 @@
 import { DoorOpen, House } from "lucide-react";
+import Link from "next/link";
 import { Badge } from "@/components/ui/badge";
 import {
   Card,
@@ -14,7 +15,10 @@ export function PropertyCard({ property }: { property: PropertySummary }) {
   const overdue = property.expiredDocuments;
 
   return (
-    <Card className="pt-0" data-testid="property-card">
+    <Card
+      className="relative pt-0 transition-colors focus-within:ring-3 focus-within:ring-ring/50 hover:bg-muted/30"
+      data-testid="property-card"
+    >
       {/* Placeholder until photos can be uploaded. */}
       <div
         aria-hidden
@@ -24,7 +28,15 @@ export function PropertyCard({ property }: { property: PropertySummary }) {
       </div>
 
       <CardHeader>
-        <CardTitle>{property.addressLine1}</CardTitle>
+        <CardTitle>
+          {/* The whole card is clickable through this link's overlay. */}
+          <Link
+            href={`/properties/${property.id}`}
+            className="outline-none after:absolute after:inset-0 after:content-['']"
+          >
+            {property.addressLine1}
+          </Link>
+        </CardTitle>
         <CardDescription>{property.locality}</CardDescription>
         {overdue > 0 ? (
           <CardAction>

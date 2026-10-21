@@ -10,9 +10,17 @@ type SidebarNavProps = {
   onNavigate?: () => void;
 };
 
+/** Highlights the current page. Reads the URL, so render it inside <Suspense>. */
 export function SidebarNav({ onNavigate }: SidebarNavProps) {
-  const pathname = usePathname();
+  return <NavLinks pathname={usePathname()} onNavigate={onNavigate} />;
+}
 
+/** The same links with nothing highlighted, while the URL isn't known yet. */
+export function SidebarNavFallback() {
+  return <NavLinks pathname={null} />;
+}
+
+function NavLinks({ pathname, onNavigate }: SidebarNavProps & { pathname: string | null }) {
   return (
     <nav aria-label="Main" className="flex flex-col gap-1 p-3">
       {NAV_ITEMS.map((item) => {
@@ -33,7 +41,8 @@ export function SidebarNav({ onNavigate }: SidebarNavProps) {
           );
         }
 
-        const active = pathname === item.href || pathname.startsWith(`${item.href}/`);
+        const active =
+          pathname !== null && (pathname === item.href || pathname.startsWith(`${item.href}/`));
         return (
           <Link
             key={item.href}

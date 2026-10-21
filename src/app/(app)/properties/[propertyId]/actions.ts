@@ -1,9 +1,10 @@
 "use server";
 
 import { z } from "zod";
-import { requireMembership } from "@/lib/auth/session";
+import { getCurrentUser, requireMembership } from "@/lib/auth/session";
 import { createClient } from "@/lib/supabase/server";
 import { detailsSchema } from "@/lib/validation/details";
+import { DOCUMENTS_BUCKET, propertyFolder, recordDocumentSchema } from "@/lib/validation/document";
 import { ownerArgs, ownershipSchema } from "@/lib/validation/property";
 import { roomSchema, toRoomRow } from "@/lib/validation/room";
 
@@ -20,6 +21,10 @@ const NOT_FOUND: ActionResult = {
 const PROPERTY_NOT_FOUND: ActionResult = {
   status: "error",
   message: "We couldn't find that property. Refresh the page and try again.",
+};
+const DOCUMENT_NOT_FOUND: ActionResult = {
+  status: "error",
+  message: "We couldn't find that document. Refresh the page and try again.",
 };
 const TRY_AGAIN: ActionResult = {
   status: "error",
@@ -136,4 +141,67 @@ export async function updateDetails(propertyId: string, input: unknown): Promise
   if (data.length === 0) return PROPERTY_NOT_FOUND;
 
   return { status: "success", message: "Details saved." };
+}
+
+/**
+ * Records a document the browser has just uploaded to Storage. The path must
+ * be inside this property's folder in the user's organisation, and the file
+ * must really be there.
+ */
+export async function recordDocument(propertyId: string, input: unknown): Promise<ActionResult> {
+  const parsed = recordDocumentSchema.safeParse(input);
+  if (!parsed.success || !id.safeParse(propertyId).success) return CHECK_AGAIN;
+
+  const [membership, user] = await Promise.all([requireMembership(), getCurrentUser()]);
+  const { path, fileName, documentType, expiryDate } = parsed.data;
+  const folder = propertyFolder(membership.orgId, propertyId);
+  const rest = path.slice(folder.length);
+  if (!path.startsWith(folder) || !rest || rest.includes("/") || rest.includes("..")) {
+    return CHECK_AGAIN;
+  }
+
+  const supabase = await createClient();
+  const { data: uploaded } = await supabase.storage.from(DOCUMENTS_BUCKET).exists(path);
+  if (!uploaded) {
+    return {
+      status: "error",
+      message: "We couldn't find the uploaded file. Please try uploading it again.",
+    };
+  }
+
+  const { error } = await supabase.from("documents").insert({
+    org_id: membership.orgId,
+    property_id: propertyId,
+    document_type: documentType,
+    file_path: path,
+    file_name: fileName,
+    expiry_date: expiryDate,
+    uploaded_by: user.id,
+  });
+  if (error) return error.code === "23503" ? PROPERTY_NOT_FOUND : TRY_AGAIN;
+
+  return { status: "success", message: `${fileName} uploaded.` };
+}
+
+/** Hides a document from the list. The file and its record are kept. */
+export async function archiveDocument(
+  propertyId: string,
+  documentId: string,
+): Promise<ActionResult> {
+  if (!id.safeParse(propertyId).success || !id.safeParse(documentId).success) {
+    return DOCUMENT_NOT_FOUND;
+  }
+
+  await requireMembership();
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .from("documents")
+    .update({ status: "archived" })
+    .eq("id", documentId)
+    .eq("property_id", propertyId)
+    .select("file_name");
+  if (error) return TRY_AGAIN;
+  if (data.length === 0) return DOCUMENT_NOT_FOUND;
+
+  return { status: "success", message: `${data[0]!.file_name} archived.` };
 }

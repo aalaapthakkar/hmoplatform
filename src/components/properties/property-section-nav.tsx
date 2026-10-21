@@ -13,6 +13,7 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { useEffect, useRef } from "react";
 import { cn } from "@/lib/utils";
 
 type Section = { slug: string; label: string; icon: LucideIcon; comingSoon?: boolean };
@@ -36,6 +37,12 @@ export const PROPERTY_SECTIONS: Section[] = [
 export function PropertySectionNav({ propertyId }: { propertyId: string }) {
   const pathname = usePathname();
   const base = `/properties/${propertyId}`;
+  const currentLink = useRef<HTMLAnchorElement>(null);
+
+  // On a phone, bring the current section's tab into view in the scrolling row.
+  useEffect(() => {
+    currentLink.current?.scrollIntoView({ block: "nearest", inline: "nearest" });
+  }, [pathname]);
 
   return (
     <nav
@@ -51,6 +58,7 @@ export function PropertySectionNav({ propertyId }: { propertyId: string }) {
             <li key={section.label} className="shrink-0">
               <Link
                 href={href}
+                ref={current ? currentLink : undefined}
                 aria-current={current ? "page" : undefined}
                 className={cn(
                   "flex items-center gap-2 rounded-lg px-3 py-2 text-sm whitespace-nowrap transition-colors hover:bg-muted",

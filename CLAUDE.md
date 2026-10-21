@@ -38,6 +38,7 @@ A web app for UK HMO landlords, rent to rent operators and letting agents to man
 - Format: `npm run format` (check only: `npm run format:check`)
 - Database: `npm run db:generate` to create a migration from src/db/schema, `npm run db:migrate` to apply migrations, `npm run db:studio` to browse. Hand-written SQL (policies, functions, triggers) goes in a custom migration: `npx drizzle-kit generate --custom --name <name>`.
 - Demo data: `npm run db:seed` (add `-- --email you@example.com` to make an existing account admin of the demo org, or `-- --email you@example.com --into-my-org` to add the demo houses to that account's own org instead). Safe to run more than once.
+- E-signing: put a Dropbox Sign test API key in .env.local as DROPBOX_SIGN_API_KEY, then `npm run esign:setup` once per database (stores the hash of ESIGN_RELAY_SECRET so the webhook at /api/esign/webhook can update status). Test mode only. `ESIGN_PROVIDER=fake` switches to the pretend provider used by the live tests.
 
 ## Data access
 - App code reads and writes through the Supabase clients in src/lib/supabase, which use the signed-in user's session so RLS applies. Drizzle is for schema and migrations only: it connects as the postgres role and bypasses RLS.

@@ -1,5 +1,15 @@
 import { sql } from "drizzle-orm";
-import { check, index, integer, pgEnum, pgTable, text, unique, uuid } from "drizzle-orm/pg-core";
+import {
+  check,
+  index,
+  integer,
+  pgEnum,
+  pgTable,
+  smallint,
+  text,
+  unique,
+  uuid,
+} from "drizzle-orm/pg-core";
 import { recordStatus } from "./_enums";
 import { orgId } from "./_org";
 import { timestamps } from "./_shared";
@@ -13,6 +23,9 @@ export const propertyType = pgEnum("property_type", [
 ]);
 
 export const ownershipType = pgEnum("ownership_type", ["owned", "managed", "master_lease"]);
+
+/** Let room by room to separate tenants, or as a whole to one household. */
+export const lettingType = pgEnum("letting_type", ["house_share", "single_let"]);
 
 export const properties = pgTable(
   "properties",
@@ -29,6 +42,8 @@ export const properties = pgTable(
     /** Local housing authority, e.g. "Leeds City Council". */
     council: text("council"),
     propertyType: propertyType("property_type").notNull().default("house"),
+    lettingType: lettingType("letting_type").notNull().default("house_share"),
+    bedrooms: smallint("bedrooms"),
     ownershipType: ownershipType("ownership_type").notNull(),
     /** Rent the org pays the landlord on a master lease, per month, in pence. */
     headRentPence: integer("head_rent_pence"),
@@ -45,8 +60,14 @@ export const properties = pgTable(
     check("properties_postcode_format", sql`postcode ~ '^[A-Z]{1,2}[0-9][A-Z0-9]? [0-9][A-Z]{2}$'`),
     check("properties_uprn_format", sql`uprn ~ '^[0-9]{1,12}$'`),
     check("properties_head_rent_pence_not_negative", sql`head_rent_pence >= 0`),
+    check(
+      "properties_master_lease_has_head_rent",
+      sql`ownership_type <> 'master_lease' or head_rent_pence is not null`,
+    ),
+    check("properties_bedrooms_range", sql`bedrooms between 1 and 50`),
   ],
 ).enableRLS();
 
 export type Property = typeof properties.$inferSelect;
 export type OwnershipType = (typeof ownershipType.enumValues)[number];
+export type LettingType = (typeof lettingType.enumValues)[number];

@@ -26,7 +26,8 @@ export const rooms = pgTable(
     orgId: orgId(),
     propertyId: uuid("property_id").notNull(),
     name: text("name").notNull(),
-    rentPence: integer("rent_pence").notNull(),
+    /** Null until the rent is set, e.g. for rooms created by the Add property wizard. */
+    rentPence: integer("rent_pence"),
     rentFrequency: rentFrequency("rent_frequency").notNull().default("monthly"),
     /** Floor area in square metres. Exact decimal, returned as a string. */
     sizeSqm: numeric("size_sqm", { precision: 6, scale: 2 }),

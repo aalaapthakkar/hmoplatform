@@ -1,8 +1,8 @@
 /**
  * Types for the Supabase client, matching src/db/schema and the SQL migrations.
- * Once a Supabase project exists, regenerate with:
+ * Kept in step with every migration by hand. To regenerate instead (needs
+ * `npx supabase login`):
  *   npx supabase gen types typescript --project-id <ref> --schema public
- * Keep this file in step with every migration until then.
  *
  * Dates (start_date, end_date, expiry_date) are "YYYY-MM-DD" strings.
  * size_sqm is numeric, so it arrives as a string to keep it exact.
@@ -20,6 +20,7 @@ type LinkStatus = "active" | "removed";
 type RentFrequency = "weekly" | "fortnightly" | "four_weekly" | "monthly";
 type PropertyType = "house" | "flat" | "maisonette" | "bungalow" | "other";
 type OwnershipType = "owned" | "managed" | "master_lease";
+type LettingType = "house_share" | "single_let";
 type RoomStatus = "available" | "let" | "unavailable" | "archived";
 type TenancyStatus = "prospective" | "active" | "ending" | "ended";
 type DocumentType =
@@ -142,6 +143,8 @@ export type Database = {
           uprn: string | null;
           council: string | null;
           property_type: PropertyType;
+          letting_type: LettingType;
+          bedrooms: number | null;
           ownership_type: OwnershipType;
           head_rent_pence: number | null;
           tags: string[];
@@ -159,6 +162,8 @@ export type Database = {
           uprn?: string | null;
           council?: string | null;
           property_type?: PropertyType;
+          letting_type?: LettingType;
+          bedrooms?: number | null;
           ownership_type: OwnershipType;
           head_rent_pence?: number | null;
           tags?: string[];
@@ -183,7 +188,7 @@ export type Database = {
           org_id: string;
           property_id: string;
           name: string;
-          rent_pence: number;
+          rent_pence: number | null;
           rent_frequency: RentFrequency;
           size_sqm: string | null;
           features: string[];
@@ -196,7 +201,7 @@ export type Database = {
           org_id: string;
           property_id: string;
           name: string;
-          rent_pence: number;
+          rent_pence?: number | null;
           rent_frequency?: RentFrequency;
           size_sqm?: string | null;
           features?: string[];
@@ -518,6 +523,28 @@ export type Database = {
         Args: { org_name: string };
         Returns: string;
       };
+      create_property: {
+        Args: {
+          p_org_id: string;
+          p_address_line_1: string;
+          p_address_line_2: string | null;
+          p_town: string;
+          p_postcode: string;
+          p_council: string | null;
+          p_property_type: PropertyType;
+          p_letting_type: LettingType;
+          p_room_count: number;
+          p_room_rent_pence: number | null;
+          p_ownership_type: OwnershipType;
+          p_head_rent_pence: number | null;
+          p_owner_id: string | null;
+          p_new_owner_name: string | null;
+          p_new_owner_email: string | null;
+          p_new_owner_phone: string | null;
+          p_tags: string[];
+        };
+        Returns: string;
+      };
     };
     Enums: {
       organisation_status: OrganisationStatus;
@@ -529,6 +556,7 @@ export type Database = {
       rent_frequency: RentFrequency;
       property_type: PropertyType;
       ownership_type: OwnershipType;
+      letting_type: LettingType;
       room_status: RoomStatus;
       tenancy_status: TenancyStatus;
       document_type: DocumentType;

@@ -265,14 +265,15 @@ export function buildDemoData(orgId: string): DemoData {
   }));
 
   // Students in Manchester are on 12-month fixed terms; everyone else is periodic.
-  const tenancies: NewTenancy[] = rooms
+  const tenancies: NewTenancy[] = roomSpecs
+    .map((room, index) => ({ ...room, id: rooms[index]!.id! }))
     .filter((room) => room.status === "let")
     .map((room, index) => {
-      const student = room.propertyId === propertyId("manchester");
+      const student = room.property === "manchester";
       return {
         id: demoId(orgId, "tenancy", index + 1),
         orgId,
-        roomId: room.id!,
+        roomId: room.id,
         startDate: student ? "2026-09-01" : "2026-04-15",
         endDate: student ? "2027-08-31" : null,
         status: "active",

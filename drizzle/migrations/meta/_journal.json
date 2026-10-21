@@ -43,6 +43,20 @@
       "when": 1791834083438,
       "tag": "0005_business_rls",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1792596208811,
+      "tag": "0006_property_wizard",
+      "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1792596229179,
+      "tag": "0007_create_property",
+      "breakpoints": true
     }
   ]
 }

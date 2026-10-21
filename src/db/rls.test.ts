@@ -521,6 +521,202 @@ describe("business rules", () => {
   });
 });
 
+describe("create_property", () => {
+  type PropertyInput = {
+    p_org_id: string;
+    p_address_line_1: string;
+    p_address_line_2: string | null;
+    p_town: string;
+    p_postcode: string;
+    p_council: string | null;
+    p_property_type: string;
+    p_letting_type: string;
+    p_room_count: number;
+    p_room_rent_pence: number | null;
+    p_ownership_type: string;
+    p_head_rent_pence: number | null;
+    p_owner_id: string | null;
+    p_new_owner_name: string | null;
+    p_new_owner_email: string | null;
+    p_new_owner_phone: string | null;
+    p_tags: string[];
+  };
+
+  const sixRoomHmo = (orgId: string): PropertyInput => ({
+    p_org_id: orgId,
+    p_address_line_1: "7 Wizard Way",
+    p_address_line_2: null,
+    p_town: "Leeds",
+    p_postcode: "LS6 2AB",
+    p_council: "Leeds",
+    p_property_type: "house",
+    p_letting_type: "house_share",
+    p_room_count: 6,
+    p_room_rent_pence: null,
+    p_ownership_type: "owned",
+    p_head_rent_pence: null,
+    p_owner_id: null,
+    p_new_owner_name: null,
+    p_new_owner_email: null,
+    p_new_owner_phone: null,
+    p_tags: ["students"],
+  });
+
+  /** Calls create_property with named arguments. Runs inside the caller's transaction. */
+  async function createProperty(input: PropertyInput) {
+    const names = Object.keys(input);
+    const args = names.map((name, index) => `${name} => $${index + 1}`).join(", ");
+    const { rows } = await db.query<{ id: string }>(
+      `select public.create_property(${args}) as id`,
+      Object.values(input),
+    );
+    return rows[0]!.id;
+  }
+
+  it("creates a house share with rooms named Room 1 to Room N, and audits every row", async () => {
+    await t.asUser(ALICE, async () => {
+      const id = await createProperty(sixRoomHmo(aliceOrg));
+
+      const property = await db.query(
+        "select letting_type, bedrooms, tags from public.properties where id = $1",
+        [id],
+      );
+      expect(property.rows).toEqual([
+        { letting_type: "house_share", bedrooms: 6, tags: ["students"] },
+      ]);
+
+      const rooms = await db.query<{ name: string; rent_pence: number | null; status: string }>(
+        "select name, rent_pence, status from public.rooms where property_id = $1 order by created_at, name",
+        [id],
+      );
+      expect(rooms.rows.map((room) => room.name).sort()).toEqual(
+        ["Room 1", "Room 2", "Room 3", "Room 4", "Room 5", "Room 6"].sort(),
+      );
+      expect(
+        rooms.rows.every((room) => room.rent_pence === null && room.status === "available"),
+      ).toBe(true);
+
+      const audit = await db.query<{ table_name: string; total: number }>(
+        `select table_name, count(*)::int as total from public.audit_log
+         where action = 'insert' and actor_user_id = $1
+           and (record_id = $2 or (after->>'property_id')::uuid = $2)
+         group by table_name order by table_name`,
+        [ALICE, id],
+      );
+      expect(audit.rows).toEqual([
+        { table_name: "properties", total: 1 },
+        { table_name: "rooms", total: 6 },
+      ]);
+    });
+  });
+
+  it("creates one 'Whole property' unit for a single let", async () => {
+    await t.asUser(ALICE, async () => {
+      const id = await createProperty({
+        ...sixRoomHmo(aliceOrg),
+        p_letting_type: "single_let",
+        p_room_count: 3,
+        p_room_rent_pence: 125000,
+      });
+      const rooms = await db.query(
+        "select name, rent_pence from public.rooms where property_id = $1",
+        [id],
+      );
+      expect(rooms.rows).toEqual([{ name: "Whole property", rent_pence: 125000 }]);
+    });
+  });
+
+  it("adds a new owner and links them to a managed property", async () => {
+    await t.asUser(ALICE, async () => {
+      const id = await createProperty({
+        ...sixRoomHmo(aliceOrg),
+        p_ownership_type: "managed",
+        p_new_owner_name: "Jean Hollis",
+        p_new_owner_email: "jean@example.test",
+      });
+      const { rows } = await db.query(
+        `select o.name, o.email, o.org_id from public.property_owners po
+         join public.owners o on o.id = po.owner_id where po.property_id = $1`,
+        [id],
+      );
+      expect(rows).toEqual([{ name: "Jean Hollis", email: "jean@example.test", org_id: aliceOrg }]);
+    });
+  });
+
+  it("links an existing owner from the same organisation, never another one's", async () => {
+    await t.asUser(ALICE, async () => {
+      const id = await createProperty({
+        ...sixRoomHmo(aliceOrg),
+        p_ownership_type: "master_lease",
+        p_head_rent_pence: 180000,
+        p_owner_id: aliceIds.owners,
+      });
+      const { rows } = await db.query(
+        "select owner_id from public.property_owners where property_id = $1",
+        [id],
+      );
+      expect(rows).toEqual([{ owner_id: aliceIds.owners }]);
+    });
+
+    await expect(
+      t.asUser(ALICE, () =>
+        createProperty({
+          ...sixRoomHmo(aliceOrg),
+          p_ownership_type: "managed",
+          p_owner_id: bobIds.owners,
+        }),
+      ),
+    ).rejects.toThrow(/property_owners_owner_fk/);
+  });
+
+  it("lets staff add properties to their organisation", async () => {
+    await expect(t.asUser(CAROL, () => createProperty(sixRoomHmo(aliceOrg)))).resolves.toEqual(
+      expect.any(String),
+    );
+  });
+
+  it("does not let anyone add a property to another organisation", async () => {
+    await expect(t.asUser(BOB, () => createProperty(sixRoomHmo(aliceOrg)))).rejects.toThrow(
+      /row-level security/,
+    );
+    await expect(t.asUser(DAVE, () => createProperty(sixRoomHmo(aliceOrg)))).rejects.toThrow(
+      /row-level security/,
+    );
+  });
+
+  it("is not available to signed-out visitors", async () => {
+    await expect(t.asAnon(() => createProperty(sixRoomHmo(aliceOrg)))).rejects.toThrow(
+      /permission denied/,
+    );
+  });
+
+  it.each<[string, Partial<PropertyInput>, RegExp]>([
+    ["no rooms", { p_room_count: 0 }, /between 1 and 50/],
+    ["too many rooms", { p_room_count: 51 }, /between 1 and 50/],
+    ["a managed property without an owner", { p_ownership_type: "managed" }, /needs an owner/],
+    ["an owner on a property you own", { p_new_owner_name: "Someone" }, /no separate owner/],
+    [
+      "a master lease without a head rent",
+      { p_ownership_type: "master_lease" },
+      /properties_master_lease_has_head_rent/,
+    ],
+    ["a head rent without a master lease", { p_head_rent_pence: 1000 }, /Only a master lease/],
+    [
+      "both an existing and a new owner",
+      {
+        p_ownership_type: "managed",
+        p_owner_id: "00000000-0000-4000-8000-000000000000",
+        p_new_owner_name: "X",
+      },
+      /not both/,
+    ],
+  ])("rejects %s", async (_label, overrides, error) => {
+    await expect(
+      t.asUser(ALICE, () => createProperty({ ...sixRoomHmo(aliceOrg), ...overrides })),
+    ).rejects.toThrow(error);
+  });
+});
+
 describe("role migration (0002)", () => {
   async function databaseBefore0002(role: string) {
     const legacy = new PGlite();

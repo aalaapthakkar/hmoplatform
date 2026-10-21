@@ -30,5 +30,5 @@ export const NAV_ITEMS: NavItem[] = [
   { label: "Compliance", href: "/compliance", icon: ShieldCheck, comingSoon: true },
   { label: "Maintenance", href: "/maintenance", icon: Wrench, comingSoon: true },
   { label: "Messages", href: "/messages", icon: MessageSquare, comingSoon: true },
-  { label: "Settings", href: "/settings", icon: Settings, comingSoon: true },
+  { label: "Settings", href: "/settings", icon: Settings },
 ];

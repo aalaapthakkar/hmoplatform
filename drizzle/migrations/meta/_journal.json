@@ -113,6 +113,13 @@
       "when": 1792603710378,
       "tag": "0015_onboarding_functions",
       "breakpoints": true
+    },
+    {
+      "idx": 16,
+      "version": "7",
+      "when": 1792611262112,
+      "tag": "0016_onboarding_follows_tenancy",
+      "breakpoints": true
     }
   ]
 }

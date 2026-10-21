@@ -1536,6 +1536,35 @@ describe("onboarding", () => {
     });
   });
 
+  it("withdraws the onboarding and switches its link off when the tenancy is cancelled", async () => {
+    const { tenancy, onboarding, token } = await setUp();
+    await t.asUser(ALICE, () => db.query("select public.cancel_tenancy($1)", [tenancy]), true);
+    const { rows } = await t.asUser(ALICE, () =>
+      db.query("select status from public.onboardings where id = $1", [onboarding]),
+    );
+    expect(rows).toEqual([{ status: "withdrawn" }]);
+    await expect(
+      t.asAnon(() => db.query("select public.portal_overview($1)", [token])),
+    ).rejects.toThrow(/isn't valid any more/);
+  });
+
+  it("finishes Move in even if the tenant was moved in from the room page", async () => {
+    const { onboarding, tenancy } = await setUp(10);
+    await t.asUser(ALICE, async () => {
+      const all = await steps(onboarding);
+      for (const step of all.filter((step) => step.kind !== "move_in")) {
+        await setStep(step.id, "done");
+      }
+      await db.query("select public.change_move_in_date($1, $2)", [tenancy, today]);
+      await db.query("select public.start_tenancy($1)", [tenancy]);
+      await setStep(all.find((step) => step.kind === "move_in")!.id, "done");
+      const { rows } = await db.query("select status from public.onboardings where id = $1", [
+        onboarding,
+      ]);
+      expect(rows).toEqual([{ status: "completed" }]);
+    });
+  });
+
   it("only gives steps to people in the organisation", async () => {
     const { onboarding } = await setUp();
     await expect(

@@ -93,6 +93,34 @@ describe("describeActivity", () => {
     ).toMatchObject({ subject: "Tenancy in Room 3", summary: "Tenant added" });
   });
 
+  it("describes notice on a tenancy with its dates", () => {
+    const tenancy = { room_id: "room-3", status: "active", end_date: null, notice_date: null };
+    expect(
+      describeActivity(
+        row({
+          table_name: "tenancies",
+          before: { ...tenancy, end_reason: null },
+          after: {
+            ...tenancy,
+            status: "ending",
+            end_date: "2026-12-31",
+            notice_date: "2026-10-21",
+            end_reason: "tenant_notice",
+          },
+        }),
+        names,
+      ),
+    ).toMatchObject({
+      subject: "Tenancy in Room 3",
+      summary: "Notice recorded",
+      changes: [
+        { label: "End date", from: null, to: "31/12/2026" },
+        { label: "Notice date", from: null, to: "21/10/2026" },
+        { label: "How it's ending", from: null, to: "The tenant gave notice" },
+      ],
+    });
+  });
+
   it("says long text changed without repeating it, and formats other values", () => {
     const property = {
       description: "Old",

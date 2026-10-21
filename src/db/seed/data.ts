@@ -264,7 +264,8 @@ export function buildDemoData(orgId: string): DemoData {
     phone: `07700 900${String(101 + index)}`,
   }));
 
-  // Students in Manchester are on 12-month fixed terms; everyone else is periodic.
+  // All periodic (Renters' Rights Act, from 1 May 2026): the Manchester students moved in
+  // for the academic year, the others in the spring.
   const tenancies: NewTenancy[] = roomSpecs
     .map((room, index) => ({ ...room, id: rooms[index]!.id! }))
     .filter((room) => room.status === "let")
@@ -275,7 +276,6 @@ export function buildDemoData(orgId: string): DemoData {
         orgId,
         roomId: room.id,
         startDate: student ? "2026-09-01" : "2026-04-15",
-        endDate: student ? "2027-08-31" : null,
         status: "active",
         rentPence: room.rentPence,
         rentFrequency: "monthly",

@@ -1,6 +1,7 @@
 import { formatPence, formatUkDate, formatUkDateTime } from "@/lib/format";
 import type { Database, Json } from "@/lib/supabase/database.types";
 import { DOCUMENT_TYPE_LABELS } from "@/lib/validation/document";
+import { END_REASON_LABELS } from "@/lib/validation/tenancy";
 import { ROOM_STATUS_LABELS } from "./rooms";
 
 export type ActivityRow = Database["public"]["Functions"]["property_activity"]["Returns"][number];
@@ -58,6 +59,8 @@ const FIELD_LABELS: Record<string, string> = {
   expiry_date: "Expiry date",
   start_date: "Start date",
   end_date: "End date",
+  notice_date: "Notice date",
+  end_reason: "How it's ending",
   rent_due_day: "Rent due day",
   deposit_pence: "Deposit",
   owner_id: "Owner",
@@ -73,9 +76,11 @@ const VALUE_LABELS: Record<string, Record<string, string>> = {
     active: "Active",
     removed: "Removed",
     prospective: "Prospective",
-    ending: "Ending",
+    ending: "Notice given",
     ended: "Ended",
+    cancelled: "Cancelled",
   },
+  end_reason: END_REASON_LABELS,
   ownership_type: { owned: "Owned", managed: "Managed for an owner", master_lease: "Master lease" },
   letting_type: { house_share: "House share", single_let: "Single let" },
   rent_frequency: {
@@ -181,7 +186,16 @@ export function describeActivity(row: ActivityRow, names: ActivityNames): Activi
       const roomId = text(current.room_id);
       const subject = `Tenancy${roomId && names.rooms.has(roomId) ? ` in ${names.rooms.get(roomId)}` : ""}`;
       if (row.action === "insert") return { ...base, subject, summary: "Tenancy created" };
-      return { ...base, subject, summary: "Tenancy updated", changes };
+      const moves: Record<string, string> = {
+        ending: "Notice recorded",
+        ended: "Tenancy ended",
+        active: "Moved in",
+        cancelled: "Cancelled",
+      };
+      const move = before.status !== after.status ? moves[text(after.status) ?? ""] : undefined;
+      // The status itself is in the summary; keep the other changes (such as the dates).
+      const details = move ? changes.filter((change) => change.label !== "Status") : changes;
+      return { ...base, subject, summary: move ?? "Tenancy updated", changes: details };
     }
     case "tenancy_tenants": {
       const tenancyId = text(current.tenancy_id);

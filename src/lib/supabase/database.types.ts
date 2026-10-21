@@ -22,7 +22,8 @@ type PropertyType = "house" | "flat" | "maisonette" | "bungalow" | "other";
 type OwnershipType = "owned" | "managed" | "master_lease";
 type LettingType = "house_share" | "single_let";
 type RoomStatus = "available" | "let" | "unavailable" | "archived";
-type TenancyStatus = "prospective" | "active" | "ending" | "ended";
+type TenancyStatus = "prospective" | "active" | "ending" | "ended" | "cancelled";
+type TenancyEndReason = "tenant_notice" | "surrender" | "possession" | "other";
 type DocumentType =
   | "gas_safety"
   | "eicr"
@@ -276,6 +277,8 @@ export type Database = {
           room_id: string;
           start_date: string;
           end_date: string | null;
+          notice_date: string | null;
+          end_reason: TenancyEndReason | null;
           status: TenancyStatus;
           rent_pence: number;
           rent_frequency: RentFrequency;
@@ -290,6 +293,8 @@ export type Database = {
           room_id: string;
           start_date: string;
           end_date?: string | null;
+          notice_date?: string | null;
+          end_reason?: TenancyEndReason | null;
           status?: TenancyStatus;
           rent_pence: number;
           rent_frequency?: RentFrequency;
@@ -565,6 +570,33 @@ export type Database = {
         };
         Returns: undefined;
       };
+      create_tenancy: {
+        Args: {
+          p_room_id: string;
+          p_first_name: string;
+          p_last_name: string;
+          p_email: string | null;
+          p_phone: string | null;
+          p_start_date: string;
+          p_rent_pence: number;
+          p_rent_frequency: RentFrequency;
+          p_rent_due_day: number;
+          p_deposit_pence: number;
+        };
+        Returns: string;
+      };
+      give_tenancy_notice: {
+        Args: {
+          p_tenancy_id: string;
+          p_end_reason: TenancyEndReason;
+          p_notice_date: string;
+          p_end_date: string;
+        };
+        Returns: undefined;
+      };
+      end_tenancy: { Args: { p_tenancy_id: string }; Returns: undefined };
+      start_tenancy: { Args: { p_tenancy_id: string }; Returns: undefined };
+      cancel_tenancy: { Args: { p_tenancy_id: string }; Returns: undefined };
       property_activity: {
         Args: { p_property_id: string; p_limit?: number };
         Returns: {
@@ -593,6 +625,7 @@ export type Database = {
       letting_type: LettingType;
       room_status: RoomStatus;
       tenancy_status: TenancyStatus;
+      tenancy_end_reason: TenancyEndReason;
       document_type: DocumentType;
     };
     CompositeTypes: { [_ in never]: never };

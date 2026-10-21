@@ -1,5 +1,6 @@
 import { formatUkDate } from "@/lib/format";
 import type { Database } from "@/lib/supabase/database.types";
+import { addDays } from "@/lib/validation/dates";
 import { DOCUMENT_TYPE_LABELS } from "@/lib/validation/document";
 
 type Tables = Database["public"]["Tables"];
@@ -24,13 +25,6 @@ export type DocumentSummary = {
 };
 
 const SOON_DAYS = 30;
-
-/** Adds days to a "YYYY-MM-DD" date. */
-function addDays(date: string, days: number) {
-  const value = new Date(`${date}T00:00:00Z`);
-  value.setUTCDate(value.getUTCDate() + days);
-  return value.toISOString().slice(0, 10);
-}
 
 /** Expired once the expiry date is before today; "soon" within 30 days. */
 export function expiryState(expiryDate: string | null, today: string): ExpiryState {

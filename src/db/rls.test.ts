@@ -7,6 +7,7 @@ import {
   installSupabaseStubs,
   type TestDatabase,
 } from "./testing/pglite";
+import { todayInLondon } from "@/lib/format";
 
 /**
  * Applies every migration to an in-memory Postgres (PGlite) with a minimal
@@ -512,7 +513,7 @@ describe("business rules", () => {
         before: number;
         after: number;
       }>(
-        "select org_id, actor_user_id, (before->>'rent_pence')::int as before, (after->>'rent_pence')::int as after from public.audit_log where table_name = 'rooms' and action = 'update'",
+        "select org_id, actor_user_id, (before->>'rent_pence')::int as before, (after->>'rent_pence')::int as after from public.audit_log where table_name = 'rooms' and action = 'update' and before->'rent_pence' is distinct from after->'rent_pence'",
       );
       expect(rows).toEqual([
         { org_id: aliceOrg, actor_user_id: ALICE, before: 52000, after: 55000 },
@@ -768,6 +769,10 @@ describe("property hub", () => {
     ).rejects.toThrow(/current tenancy/);
 
     await t.asUser(ALICE, async () => {
+      await db.query(
+        "update public.tenancies set status = 'ending', end_date = start_date, end_reason = 'tenant_notice' where id = $1",
+        [aliceIds.tenancies],
+      );
       await db.query("update public.tenancies set status = 'ended' where id = $1", [
         aliceIds.tenancies,
       ]);
@@ -936,6 +941,394 @@ describe("property hub", () => {
         async () => (await db.query("select name from storage.objects")).rows,
       );
       expect(anon).toEqual([]);
+    });
+  });
+});
+
+describe("tenancies", () => {
+  const today = todayInLondon();
+  const daysFromToday = (days: number) => {
+    const date = new Date(`${today}T00:00:00Z`);
+    date.setUTCDate(date.getUTCDate() + days);
+    return date.toISOString().slice(0, 10);
+  };
+
+  /** A fresh, available room in Alice's org (inside the current transaction). */
+  async function newRoom() {
+    const { rows } = await db.query<{ id: string }>(
+      "insert into public.rooms (org_id, property_id, name) values ($1, $2, 'Test room') returning id",
+      [aliceOrg, aliceIds.properties],
+    );
+    return rows[0]!.id;
+  }
+
+  async function roomStatus(roomId: string) {
+    const { rows } = await db.query<{ status: string }>(
+      "select status from public.rooms where id = $1",
+      [roomId],
+    );
+    return rows[0]!.status;
+  }
+
+  /** A raw insert, to test the table's own rules. */
+  function insertTenancy(roomId: string, status: string, extra = "") {
+    const ending = status === "ending" || status === "ended";
+    return db.query(
+      `insert into public.tenancies (org_id, room_id, start_date, status, rent_pence${
+        ending ? ", end_date, end_reason" : ""
+      }) values ($1, $2, '2026-06-01', $3, 50000${ending ? ", '2026-12-01', 'tenant_notice'" : ""}) ${extra}`,
+      [aliceOrg, roomId, status],
+    );
+  }
+
+  type TenancyInput = {
+    p_room_id: string;
+    p_start_date: string;
+    p_rent_pence?: number;
+    p_rent_frequency?: string;
+    p_rent_due_day?: number;
+    p_deposit_pence?: number;
+  };
+
+  async function createTenancy(input: TenancyInput) {
+    const args = {
+      p_first_name: "Jo",
+      p_last_name: "Tenant",
+      p_email: "jo@example.test",
+      p_phone: null,
+      p_rent_pence: 55000,
+      p_rent_frequency: "monthly",
+      p_rent_due_day: 1,
+      p_deposit_pence: 0,
+      ...input,
+    };
+    const named = Object.keys(args)
+      .map((name, index) => `${name} => $${index + 1}`)
+      .join(", ");
+    const { rows } = await db.query<{ id: string }>(
+      `select public.create_tenancy(${named}) as id`,
+      Object.values(args),
+    );
+    return rows[0]!.id;
+  }
+
+  async function tenancy(id: string) {
+    const { rows } = await db.query<{
+      status: string;
+      end_date: string | null;
+      notice_date: string | null;
+    }>(
+      "select status, to_char(end_date, 'YYYY-MM-DD') as end_date, to_char(notice_date, 'YYYY-MM-DD') as notice_date from public.tenancies where id = $1",
+      [id],
+    );
+    return rows[0]!;
+  }
+
+  const notice = (id: string, noticeDate: string, endDate: string, reason = "tenant_notice") =>
+    db.query("select public.give_tenancy_notice($1, $2, $3, $4)", [
+      id,
+      reason,
+      noticeDate,
+      endDate,
+    ]);
+  const call = (fn: string, id: string) => db.query(`select public.${fn}($1)`, [id]);
+
+  describe("one active tenancy per room", () => {
+    it("refuses a second active tenancy", async () => {
+      await expect(
+        t.asUser(ALICE, async () => {
+          const room = await newRoom();
+          await insertTenancy(room, "active");
+          await insertTenancy(room, "active");
+        }),
+      ).rejects.toThrow(/tenancies_one_current_per_room/);
+    });
+
+    it("counts a tenancy that's ending as current", async () => {
+      await expect(
+        t.asUser(ALICE, async () => {
+          const room = await newRoom();
+          await insertTenancy(room, "ending");
+          await insertTenancy(room, "active");
+        }),
+      ).rejects.toThrow(/tenancies_one_current_per_room/);
+    });
+
+    it("allows one upcoming tenancy alongside the current one, but not two", async () => {
+      await expect(
+        t.asUser(ALICE, async () => {
+          const room = await newRoom();
+          await insertTenancy(room, "active");
+          await insertTenancy(room, "prospective");
+          await insertTenancy(room, "prospective");
+        }),
+      ).rejects.toThrow(/tenancies_one_upcoming_per_room/);
+    });
+
+    it("keeps any number of past tenancies alongside a current one", async () => {
+      await t.asUser(ALICE, async () => {
+        const room = await newRoom();
+        await insertTenancy(room, "ended");
+        await insertTenancy(room, "ended");
+        await insertTenancy(room, "cancelled");
+        await insertTenancy(room, "active");
+        await insertTenancy(room, "prospective");
+        const { rows } = await db.query(
+          "select count(*)::int as n from public.tenancies where room_id = $1",
+          [room],
+        );
+        expect(rows).toEqual([{ n: 5 }]);
+      });
+    });
+
+    it("applies per room, not per property", async () => {
+      await t.asUser(ALICE, async () => {
+        await insertTenancy(await newRoom(), "active");
+        await insertTenancy(await newRoom(), "active");
+      });
+    });
+  });
+
+  describe("create_tenancy", () => {
+    it("lets a room from today: periodic, no end date, and the room becomes Let", async () => {
+      await t.asUser(ALICE, async () => {
+        const room = await newRoom();
+        const id = await createTenancy({ p_room_id: room, p_start_date: today });
+        expect(await tenancy(id)).toEqual({ status: "active", end_date: null, notice_date: null });
+        expect(await roomStatus(room)).toBe("let");
+
+        const { rows } = await db.query(
+          `select tn.first_name, tn.org_id from public.tenancy_tenants tt
+           join public.tenants tn on tn.id = tt.tenant_id where tt.tenancy_id = $1`,
+          [id],
+        );
+        expect(rows).toEqual([{ first_name: "Jo", org_id: aliceOrg }]);
+
+        const audit = await db.query(
+          "select count(*)::int as n from public.audit_log where actor_user_id = $1 and record_id = $2 and action = 'insert'",
+          [ALICE, id],
+        );
+        expect(audit.rows).toEqual([{ n: 1 }]);
+      });
+    });
+
+    it("makes a future tenancy upcoming and leaves the room available", async () => {
+      await t.asUser(ALICE, async () => {
+        const room = await newRoom();
+        const id = await createTenancy({ p_room_id: room, p_start_date: daysFromToday(30) });
+        expect((await tenancy(id)).status).toBe("prospective");
+        expect(await roomStatus(room)).toBe("available");
+      });
+    });
+
+    it("explains clashes with the current and upcoming tenancies", async () => {
+      await t.asUser(ALICE, async () => {
+        const room = await newRoom();
+        const current = await createTenancy({ p_room_id: room, p_start_date: today });
+        await db.query("savepoint s");
+        await expect(createTenancy({ p_room_id: room, p_start_date: today })).rejects.toThrow(
+          /already has a current tenancy/,
+        );
+        await db.query("rollback to savepoint s");
+
+        await notice(current, today, daysFromToday(60));
+        await expect(
+          createTenancy({ p_room_id: room, p_start_date: daysFromToday(30) }),
+        ).rejects.toThrow(/Choose a start date on or after that day/);
+        await db.query("rollback to savepoint s");
+
+        await notice(current, today, daysFromToday(60));
+        await createTenancy({ p_room_id: room, p_start_date: daysFromToday(60) });
+        await expect(
+          createTenancy({ p_room_id: room, p_start_date: daysFromToday(90) }),
+        ).rejects.toThrow(/already has an upcoming tenancy/);
+      });
+    });
+
+    it.each([
+      ["monthly", 55000, 63461],
+      ["weekly", 13000, 65000],
+      // £4,200 a month is £50,400 a year, so the cap is six weeks.
+      ["monthly", 420000, 581538],
+    ])("caps the deposit for %s rent of %i pence at %i", async (frequency, rent, cap) => {
+      const attempt = (deposit: number) =>
+        t.asUser(ALICE, async () =>
+          createTenancy({
+            p_room_id: await newRoom(),
+            p_start_date: today,
+            p_rent_frequency: frequency,
+            p_rent_pence: rent,
+            p_deposit_pence: deposit,
+          }),
+        );
+      await expect(attempt(cap)).resolves.toEqual(expect.any(String));
+      await expect(attempt(cap + 1)).rejects.toThrow(/tenancies_deposit_within_cap/);
+    });
+
+    it("takes monthly or weekly rent, with a weekday for weekly rent", async () => {
+      const attempt = (frequency: string, dueDay: number) =>
+        t.asUser(ALICE, async () =>
+          createTenancy({
+            p_room_id: await newRoom(),
+            p_start_date: today,
+            p_rent_frequency: frequency,
+            p_rent_pence: 13000,
+            p_rent_due_day: dueDay,
+          }),
+        );
+      await expect(attempt("weekly", 5)).resolves.toEqual(expect.any(String));
+      await expect(attempt("weekly", 8)).rejects.toThrow(/tenancies_weekly_due_day_is_weekday/);
+      await expect(attempt("fortnightly", 1)).rejects.toThrow(/tenancies_rent_monthly_or_weekly/);
+    });
+
+    it("won't let an archived room", async () => {
+      await expect(
+        t.asUser(ALICE, async () => {
+          const room = await newRoom();
+          await db.query("update public.rooms set status = 'archived' where id = $1", [room]);
+          await createTenancy({ p_room_id: room, p_start_date: today });
+        }),
+      ).rejects.toThrow(/archived/);
+    });
+  });
+
+  describe("ending, moving in and cancelling", () => {
+    it("goes from current to ending to ended, freeing the room", async () => {
+      await t.asUser(ALICE, async () => {
+        const room = await newRoom();
+        const id = await createTenancy({ p_room_id: room, p_start_date: daysFromToday(-90) });
+        await notice(id, daysFromToday(-60), today);
+        expect(await tenancy(id)).toEqual({
+          status: "ending",
+          notice_date: daysFromToday(-60),
+          end_date: today,
+        });
+        expect(await roomStatus(room)).toBe("let");
+
+        await call("end_tenancy", id);
+        expect((await tenancy(id)).status).toBe("ended");
+        expect(await roomStatus(room)).toBe("available");
+      });
+    });
+
+    it("waits for the end date before marking a tenancy ended", async () => {
+      await expect(
+        t.asUser(ALICE, async () => {
+          const id = await createTenancy({ p_room_id: await newRoom(), p_start_date: today });
+          await notice(id, today, daysFromToday(60));
+          await call("end_tenancy", id);
+        }),
+      ).rejects.toThrow(/You can mark it as ended from that day/);
+      await expect(
+        t.asUser(ALICE, async () => {
+          const id = await createTenancy({ p_room_id: await newRoom(), p_start_date: today });
+          await call("end_tenancy", id);
+        }),
+      ).rejects.toThrow(/Record the notice/);
+    });
+
+    it("checks the notice dates", async () => {
+      const attempt = (noticeDate: string, endDate: string) =>
+        t.asUser(ALICE, async () => {
+          const id = await createTenancy({ p_room_id: await newRoom(), p_start_date: today });
+          await notice(id, noticeDate, endDate);
+        });
+      await expect(attempt(daysFromToday(-1), daysFromToday(60))).rejects.toThrow(
+        /before the tenancy started/,
+      );
+      await expect(attempt(daysFromToday(10), daysFromToday(5))).rejects.toThrow(
+        /on or before the end date/,
+      );
+    });
+
+    it("moves the next tenant in only once the room is free and the day has come", async () => {
+      await t.asUser(ALICE, async () => {
+        const room = await newRoom();
+        const current = await createTenancy({ p_room_id: room, p_start_date: daysFromToday(-30) });
+        await notice(current, daysFromToday(-30), today);
+        const next = await createTenancy({ p_room_id: room, p_start_date: daysFromToday(1) });
+
+        await db.query("savepoint s");
+        await expect(call("start_tenancy", next)).rejects.toThrow(/starts on/);
+        await db.query("rollback to savepoint s");
+
+        // Bring the start forward to today: the old tenancy still has to end first.
+        await db.query("update public.tenancies set start_date = $2 where id = $1", [next, today]);
+        await expect(call("start_tenancy", next)).rejects.toThrow(/hasn't ended yet/);
+        await db.query("rollback to savepoint s");
+
+        await db.query("update public.tenancies set start_date = $2 where id = $1", [next, today]);
+        await call("end_tenancy", current);
+        await call("start_tenancy", next);
+        expect((await tenancy(next)).status).toBe("active");
+        expect(await roomStatus(room)).toBe("let");
+      });
+    });
+
+    it("cancels only upcoming tenancies, and keeps them", async () => {
+      await t.asUser(ALICE, async () => {
+        const room = await newRoom();
+        const next = await createTenancy({ p_room_id: room, p_start_date: daysFromToday(10) });
+        await call("cancel_tenancy", next);
+        expect((await tenancy(next)).status).toBe("cancelled");
+        // The slot is free for another upcoming tenant.
+        await createTenancy({ p_room_id: room, p_start_date: daysFromToday(20) });
+      });
+      await expect(
+        t.asUser(ALICE, async () => {
+          const id = await createTenancy({ p_room_id: await newRoom(), p_start_date: today });
+          await call("cancel_tenancy", id);
+        }),
+      ).rejects.toThrow(/Only an upcoming tenancy can be cancelled/);
+    });
+
+    it.each([
+      ["active", "prospective"],
+      ["active", "ended"],
+      ["ending", "active"],
+      ["ended", "active"],
+      ["cancelled", "prospective"],
+    ])("never goes from %s back to %s", async (from, to) => {
+      await expect(
+        t.asUser(ALICE, async () => {
+          const room = await newRoom();
+          await insertTenancy(room, from);
+          await db.query(
+            "update public.tenancies set status = $2, end_date = null, end_reason = null where room_id = $1",
+            [room, to],
+          );
+        }),
+      ).rejects.toThrow(/A tenancy can't go from/);
+    });
+
+    it("never deletes a tenancy", async () => {
+      await expect(
+        t.asUser(ALICE, () =>
+          db.query("delete from public.tenancies where id = $1", [aliceIds.tenancies]),
+        ),
+      ).rejects.toThrow(/permission denied/);
+    });
+  });
+
+  describe("access", () => {
+    it("doesn't let another organisation let, end or see Alice's rooms", async () => {
+      await expect(
+        t.asUser(BOB, () => createTenancy({ p_room_id: aliceIds.rooms, p_start_date: today })),
+      ).rejects.toThrow(/Room not found/);
+      await expect(t.asUser(BOB, () => call("cancel_tenancy", aliceIds.tenancies))).rejects.toThrow(
+        /Tenancy not found/,
+      );
+      await expect(t.asUser(BOB, () => notice(aliceIds.tenancies, today, today))).rejects.toThrow(
+        /Tenancy not found/,
+      );
+    });
+
+    it("is closed to signed-out visitors", async () => {
+      for (const fn of ["end_tenancy", "start_tenancy", "cancel_tenancy"]) {
+        await expect(t.asAnon(() => call(fn, aliceIds.tenancies))).rejects.toThrow(
+          /permission denied/,
+        );
+      }
     });
   });
 });

@@ -1,0 +1,1 @@
+ALTER TYPE "public"."tenancy_status" ADD VALUE 'cancelled';

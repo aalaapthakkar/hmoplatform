@@ -1,5 +1,6 @@
 import { z } from "zod";
 import type { Database } from "@/lib/supabase/database.types";
+import { optionalDateField } from "./dates";
 
 type DocumentType = Database["public"]["Enums"]["document_type"];
 
@@ -83,22 +84,10 @@ export function documentPath(orgId: string, propertyId: string, fileName: string
   return `${propertyFolder(orgId, propertyId)}${id}-${safeFileName(fileName)}`;
 }
 
-const expiryDate = z
-  .string()
-  .trim()
-  .refine((value) => value === "" || isRealDate(value), "Enter a real date, like 31/12/2026")
-  .transform((value) => value || null);
-
-function isRealDate(value: string) {
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
-  const date = new Date(`${value}T00:00:00Z`);
-  return !Number.isNaN(date.getTime()) && date.toISOString().startsWith(value);
-}
-
 /** The upload form, checked before the file is sent. */
 export const documentFormSchema = z.object({
   documentType: z.enum(DOCUMENT_TYPES, "Choose what kind of document this is"),
-  expiryDate,
+  expiryDate: optionalDateField,
 });
 
 export type DocumentFormValues = { documentType: string; expiryDate: string };

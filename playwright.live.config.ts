@@ -50,6 +50,7 @@ export default defineConfig({
     timeout: 240_000,
     reuseExistingServer: false,
     // Auth emails must link back to this server, not the dev one.
-    env: { NEXT_PUBLIC_SITE_URL: baseURL },
+    // The pretend e-sign provider, so tests never send real signature requests.
+    env: { NEXT_PUBLIC_SITE_URL: baseURL, ESIGN_PROVIDER: "fake" },
   },
 });

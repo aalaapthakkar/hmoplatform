@@ -74,3 +74,21 @@ test("onboarding pages need a signed-in user, but the applicant portal doesn't",
   await expect(page.getByTestId("link-invalid")).toBeVisible();
   expect(response?.headers()["referrer-policy"]).toBe("no-referrer");
 });
+
+test("the e-sign webhook is reachable without signing in, but rejects unverified calls", async ({
+  request,
+}) => {
+  const response = await request.post("/api/esign/webhook", {
+    multipart: { json: JSON.stringify({ event: { event_type: "callback_test" } }) },
+    maxRedirects: 0,
+  });
+  // Not set up in this test server (503) or not verified (401): never a redirect to log in.
+  expect([401, 503]).toContain(response.status());
+});
+
+test("settings and agreement PDFs need a signed-in user", async ({ page }) => {
+  await page.goto("/settings/documents");
+  await expect(page).toHaveURL(/\/log-in$/);
+  await page.goto("/tenancies/0f8fad5b-d9cb-469f-a165-70867728950e/agreement");
+  await expect(page).toHaveURL(/\/log-in$/);
+});

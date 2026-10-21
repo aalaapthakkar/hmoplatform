@@ -101,7 +101,7 @@ export type PropertyGroup = {
 };
 
 /** Every tag in use, A to Z, for the tag filter. */
-export function allTags(properties: PropertySummary[]): string[] {
+export function allTags(properties: { tags: string[] }[]): string[] {
   return [...new Set(properties.flatMap((property) => property.tags))].sort((a, b) =>
     a.localeCompare(b, "en-GB", { sensitivity: "base" }),
   );

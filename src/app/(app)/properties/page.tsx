@@ -1,8 +1,10 @@
 import type { Metadata } from "next";
+import { Plus } from "lucide-react";
 import Link from "next/link";
 import { Suspense } from "react";
 import { PropertyCard } from "@/components/properties/property-card";
 import { PropertyFiltersBar } from "@/components/properties/property-filters";
+import { buttonVariants } from "@/components/ui/button";
 import { requireMembership } from "@/lib/auth/session";
 import { todayInLondon } from "@/lib/format";
 import {
@@ -20,9 +22,12 @@ export const metadata: Metadata = { title: "Properties" };
 export default function PropertiesPage({ searchParams }: PageProps<"/properties">) {
   return (
     <div className="flex flex-col gap-6">
-      <div className="flex flex-col gap-1">
-        <h1 className="text-2xl font-semibold tracking-tight">Properties</h1>
-        <p className="text-muted-foreground">Your houses and flats, grouped by tag.</p>
+      <div className="flex flex-wrap items-end justify-between gap-4">
+        <div className="flex flex-col gap-1">
+          <h1 className="text-2xl font-semibold tracking-tight">Properties</h1>
+          <p className="text-muted-foreground">Your houses and flats, grouped by tag.</p>
+        </div>
+        <AddPropertyLink />
       </div>
       <Suspense fallback={<PropertiesFallback />}>
         <PropertiesList searchParams={searchParams} />
@@ -58,9 +63,10 @@ async function PropertiesList({ searchParams }: Pick<PageProps<"/properties">, "
     return (
       <div className="rounded-xl border border-dashed p-8 text-center">
         <p className="font-medium">You haven&apos;t added any properties yet.</p>
-        <p className="text-sm text-muted-foreground">
-          Once you add a house or flat, it&apos;ll appear here with its rooms.
+        <p className="mb-4 text-sm text-muted-foreground">
+          Add a house or flat and we&apos;ll set up its rooms for you. It takes about a minute.
         </p>
+        <AddPropertyLink />
       </div>
     );
   }
@@ -102,6 +108,15 @@ async function PropertiesList({ searchParams }: Pick<PageProps<"/properties">, "
         })
       )}
     </>
+  );
+}
+
+function AddPropertyLink() {
+  return (
+    <Link href="/properties/new" className={buttonVariants({ size: "lg" })}>
+      <Plus aria-hidden />
+      Add property
+    </Link>
   );
 }
 

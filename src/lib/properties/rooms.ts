@@ -1,4 +1,4 @@
-import { formatPence, formatUkDate } from "@/lib/format";
+import { formatPence, formatUkDate, todayInLondon } from "@/lib/format";
 import type { Database } from "@/lib/supabase/database.types";
 import type { RoomFormValues } from "@/lib/validation/room";
 
@@ -11,7 +11,7 @@ export type RoomListRow = Pick<
   Tables["rooms"]["Row"],
   "id" | "name" | "rent_pence" | "rent_frequency" | "size_sqm" | "features" | "status"
 > & {
-  tenancies: (Pick<Tables["tenancies"]["Row"], "id" | "start_date" | "status"> & {
+  tenancies: (Pick<Tables["tenancies"]["Row"], "id" | "start_date" | "end_date" | "status"> & {
     tenancy_tenants: (Pick<Tables["tenancy_tenants"]["Row"], "status"> & {
       tenants: Pick<
         Tables["tenants"]["Row"],
@@ -32,7 +32,16 @@ export type RoomSummary = {
   size: string | null;
   features: string[];
   /** The tenancy happening now, if any. */
-  currentTenancy: { moveIn: string; tenants: RoomTenant[] } | null;
+  currentTenancy: {
+    moveIn: string;
+    tenants: RoomTenant[];
+    /** The last day, once notice has been given. */
+    leaving: string | null;
+    /** Notice given and the last day has come: time to confirm they've left. */
+    endPassed: boolean;
+  } | null;
+  /** The upcoming tenancy's start date, if one is lined up. */
+  nextMoveIn: string | null;
   /** The room as the edit form shows it. */
   formValues: RoomFormValues;
 };
@@ -69,11 +78,13 @@ function trimSize(size: string | null) {
   return size.includes(".") ? size.replace(/\.?0+$/, "") : size;
 }
 
-export function summariseRoom(row: RoomListRow): RoomSummary {
+export function summariseRoom(row: RoomListRow, today: string = todayInLondon()): RoomSummary {
   // Active first, then a tenancy that's ending.
   const current = [...row.tenancies]
     .filter((tenancy) => tenancy.status === "active" || tenancy.status === "ending")
     .sort((a, b) => (a.status === b.status ? 0 : a.status === "active" ? -1 : 1))[0];
+
+  const next = row.tenancies.find((tenancy) => tenancy.status === "prospective");
 
   const tenants =
     current?.tenancy_tenants
@@ -94,7 +105,17 @@ export function summariseRoom(row: RoomListRow): RoomSummary {
     statusLabel: ROOM_STATUS_LABELS[row.status],
     size,
     features: row.features,
-    currentTenancy: current ? { moveIn: formatUkDate(current.start_date), tenants } : null,
+    currentTenancy: current
+      ? {
+          moveIn: formatUkDate(current.start_date),
+          tenants,
+          leaving:
+            current.status === "ending" && current.end_date ? formatUkDate(current.end_date) : null,
+          endPassed:
+            current.status === "ending" && current.end_date !== null && current.end_date <= today,
+        }
+      : null,
+    nextMoveIn: next ? formatUkDate(next.start_date) : null,
     formValues: {
       name: row.name,
       rent: penceToPounds(row.rent_pence),

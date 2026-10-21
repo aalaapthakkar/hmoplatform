@@ -8,7 +8,12 @@ import { DOCUMENTS_BUCKET, propertyFolder, recordDocumentSchema } from "@/lib/va
 import { ownerArgs, ownershipSchema } from "@/lib/validation/property";
 import { roomSchema, toRoomRow } from "@/lib/validation/room";
 
-export type ActionResult = { status: "success" | "error"; message: string };
+export type ActionResult = {
+  status: "success" | "error";
+  message: string;
+  /** The id of a record the action created, when there is one. */
+  id?: string;
+};
 
 const CHECK_AGAIN: ActionResult = {
   status: "error",

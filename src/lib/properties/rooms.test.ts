@@ -56,23 +56,55 @@ describe("summariseRoom", () => {
           {
             id: "old",
             start_date: "2025-09-01",
+            end_date: "2026-08-31",
             status: "ended",
             tenancy_tenants: [tenant("Old")],
           },
           {
             id: "now",
             start_date: "2026-09-01",
+            end_date: null,
             status: "active",
             tenancy_tenants: [tenant("Priya"), { ...tenant("Gone"), status: "removed" }],
           },
-          { id: "next", start_date: "2027-09-01", status: "prospective", tenancy_tenants: [] },
+          {
+            id: "next",
+            start_date: "2027-09-01",
+            end_date: null,
+            status: "prospective",
+            tenancy_tenants: [],
+          },
         ],
       }),
+      "2026-10-21",
     );
     expect(room.currentTenancy).toEqual({
       moveIn: "01/09/2026",
       tenants: [{ name: "Priya Shah", email: "priya@example.com", phone: "07700 900101" }],
+      leaving: null,
+      endPassed: false,
     });
+    expect(room.nextMoveIn).toBe("01/09/2027");
+  });
+
+  it("shows when a tenant with notice is leaving, and when to confirm they've gone", () => {
+    const ending = (endDate: string) =>
+      summariseRoom(
+        row({
+          tenancies: [
+            {
+              id: "now",
+              start_date: "2026-01-01",
+              end_date: endDate,
+              status: "ending",
+              tenancy_tenants: [tenant("Priya")],
+            },
+          ],
+        }),
+        "2026-10-21",
+      ).currentTenancy;
+    expect(ending("2026-12-31")).toMatchObject({ leaving: "31/12/2026", endPassed: false });
+    expect(ending("2026-10-21")).toMatchObject({ leaving: "21/10/2026", endPassed: true });
   });
 
   it("fills the edit form with pounds, not pence", () => {

@@ -1,6 +1,7 @@
 "use client";
 
 import { Mail, Phone, Plus } from "lucide-react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { type FormEvent, useState, useTransition } from "react";
 import { toast } from "sonner";
@@ -28,7 +29,7 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
+import { Button, buttonVariants } from "@/components/ui/button";
 import {
   Card,
   CardAction,
@@ -123,6 +124,7 @@ export function RoomsSection({
             <RoomCard
               key={room.id}
               room={room}
+              tenanciesHref={`/properties/${propertyId}/rooms/${room.id}`}
               onEdit={() => setEditing({ mode: "edit", room })}
               onArchive={() => setArchiving(room)}
             />
@@ -204,10 +206,12 @@ export function RoomsSection({
 
 function RoomCard({
   room,
+  tenanciesHref,
   onEdit,
   onArchive,
 }: {
   room: RoomSummary;
+  tenanciesHref: string;
   onEdit: () => void;
   onArchive: () => void;
 }) {
@@ -260,17 +264,34 @@ function RoomCard({
               </div>
             ))}
             <p className="text-muted-foreground">Moved in {tenancy.moveIn}</p>
+            {tenancy.endPassed ? (
+              <p className="rounded-md bg-amber-100 px-2 py-1 text-amber-950 dark:bg-amber-900/40 dark:text-amber-50">
+                Last day was {tenancy.leaving}. Confirm they&apos;ve moved out.
+              </p>
+            ) : tenancy.leaving ? (
+              <p className="text-muted-foreground">Notice given, leaving {tenancy.leaving}</p>
+            ) : null}
           </div>
         ) : (
           <p className="text-muted-foreground">No current tenant</p>
         )}
+        {room.nextMoveIn ? (
+          <p className="text-muted-foreground">Next tenant from {room.nextMoveIn}</p>
+        ) : null}
         {room.size || room.features.length > 0 ? (
           <p className="text-xs text-muted-foreground">
             {[room.size ? `${room.size} m²` : null, ...room.features].filter(Boolean).join(" · ")}
           </p>
         ) : null}
       </CardContent>
-      <CardFooter className="gap-2">
+      <CardFooter className="flex-wrap gap-2">
+        <Link
+          href={tenanciesHref}
+          className={buttonVariants({ variant: "default" })}
+          aria-label={`Tenancies for ${room.name}`}
+        >
+          Tenancies
+        </Link>
         <Button variant="outline" onClick={onEdit} aria-label={`Edit ${room.name}`}>
           Edit
         </Button>

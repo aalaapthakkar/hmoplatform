@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Suspense } from "react";
 import { RoomsSection } from "@/components/properties/rooms-section";
 import { SectionFallback } from "@/components/properties/section-heading";
+import { todayInLondon } from "@/lib/format";
 import { getProperty } from "@/lib/properties/queries";
 import { nextRoomName, type RoomListRow, sortRooms, summariseRoom } from "@/lib/properties/rooms";
 import { createClient } from "@/lib/supabase/server";
@@ -19,7 +20,7 @@ export default function RoomsPage({ params }: PageProps<"/properties/[propertyId
 
 const ROOM_COLUMNS = `
   id, name, rent_pence, rent_frequency, size_sqm, features, status,
-  tenancies (id, start_date, status,
+  tenancies (id, start_date, end_date, status,
     tenancy_tenants (status, tenants (first_name, last_name, email, phone)))
 `;
 
@@ -36,7 +37,8 @@ async function Rooms({ params }: Pick<PageProps<"/properties/[propertyId]">, "pa
     .overrideTypes<RoomListRow[], { merge: false }>();
   if (error) throw new Error("Could not load rooms", { cause: error.code });
 
-  const rooms = sortRooms(data).map(summariseRoom);
+  const today = todayInLondon();
+  const rooms = sortRooms(data).map((room) => summariseRoom(room, today));
 
   return (
     <RoomsSection

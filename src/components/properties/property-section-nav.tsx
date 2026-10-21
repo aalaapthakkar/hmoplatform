@@ -52,7 +52,9 @@ export function PropertySectionNav({ propertyId }: { propertyId: string }) {
       <ul className="flex gap-1 pb-2 md:flex-col md:pb-0">
         {PROPERTY_SECTIONS.map((section) => {
           const href = section.slug ? `${base}/${section.slug}` : base;
-          const current = pathname === href;
+          // A room's own page belongs to the Rooms section.
+          const current =
+            pathname === href || (section.slug === "" && pathname.startsWith(`${base}/rooms/`));
           const Icon = section.icon;
           return (
             <li key={section.label} className="shrink-0">

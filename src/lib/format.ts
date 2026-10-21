@@ -7,6 +7,13 @@ const ukDate = new Intl.DateTimeFormat("en-GB", {
   year: "numeric",
 });
 
+const ukTime = new Intl.DateTimeFormat("en-GB", {
+  timeZone: "Europe/London",
+  hour: "2-digit",
+  minute: "2-digit",
+  hourCycle: "h23",
+});
+
 const isoDateInLondon = new Intl.DateTimeFormat("en-CA", {
   timeZone: "Europe/London",
   year: "numeric",
@@ -34,4 +41,10 @@ export function formatUkDate(date: Date | string): string {
 /** Today's date in Europe/London as "YYYY-MM-DD", for comparing with date columns. */
 export function todayInLondon(now: Date = new Date()): string {
   return isoDateInLondon.format(now);
+}
+
+/** Formats a UTC instant as a UK date and 24-hour time in Europe/London, e.g. "21/10/2026 14:05". */
+export function formatUkDateTime(date: Date | string): string {
+  const value = typeof date === "string" ? new Date(date) : date;
+  return `${formatUkDate(value)} ${ukTime.format(value)}`;
 }

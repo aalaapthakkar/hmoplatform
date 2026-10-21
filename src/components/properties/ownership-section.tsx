@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { type FormEvent, useState, useTransition } from "react";
 import { toast } from "sonner";
 import { setOwnership } from "@/app/(app)/properties/[propertyId]/actions";
-import { useFormValues } from "@/components/forms/fields";
+import { FormIdPrefix, useFormValues } from "@/components/forms/fields";
 import {
   defaultOwnerMode,
   OwnershipFields,
@@ -93,34 +93,36 @@ export function OwnershipSection({
       {editing ? (
         <Card>
           <CardContent>
-            <form onSubmit={handleSubmit} noValidate className="flex flex-col gap-4">
-              <OwnershipFields
-                values={form.values}
-                errors={form.errors}
-                field={form.field}
-                set={form.set}
-                onChooseOwnership={chooseOwnership}
-                owners={owners}
-              />
-              <div className="flex flex-wrap gap-3">
-                <Button type="submit" size="lg" disabled={pending}>
-                  {pending ? "Saving…" : "Save ownership"}
-                </Button>
-                <Button
-                  type="button"
-                  size="lg"
-                  variant="ghost"
-                  disabled={pending}
-                  onClick={() => {
-                    form.setValues(initial);
-                    form.setErrors({});
-                    setEditing(false);
-                  }}
-                >
-                  Cancel
-                </Button>
-              </div>
-            </form>
+            <FormIdPrefix value={form.prefix}>
+              <form onSubmit={handleSubmit} noValidate className="flex flex-col gap-4">
+                <OwnershipFields
+                  values={form.values}
+                  errors={form.errors}
+                  field={form.field}
+                  set={form.set}
+                  onChooseOwnership={chooseOwnership}
+                  owners={owners}
+                />
+                <div className="flex flex-wrap gap-3">
+                  <Button type="submit" size="lg" disabled={pending}>
+                    {pending ? "Saving…" : "Save ownership"}
+                  </Button>
+                  <Button
+                    type="button"
+                    size="lg"
+                    variant="ghost"
+                    disabled={pending}
+                    onClick={() => {
+                      form.setValues(initial);
+                      form.setErrors({});
+                      setEditing(false);
+                    }}
+                  >
+                    Cancel
+                  </Button>
+                </div>
+              </form>
+            </FormIdPrefix>
           </CardContent>
         </Card>
       ) : (

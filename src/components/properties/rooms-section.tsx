@@ -10,7 +10,13 @@ import {
   type ActionResult,
   updateRoom,
 } from "@/app/(app)/properties/[propertyId]/actions";
-import { Field, PoundsInput, selectClass, useFormValues } from "@/components/forms/fields";
+import {
+  Field,
+  FormIdPrefix,
+  PoundsInput,
+  selectClass,
+  useFormValues,
+} from "@/components/forms/fields";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -299,58 +305,60 @@ function RoomForm({
   }
 
   return (
-    <form onSubmit={handleSubmit} noValidate className="flex flex-col gap-4 p-4">
-      <SheetHeader className="p-0">
-        <SheetTitle>{title}</SheetTitle>
-        <SheetDescription>Rent is what one tenant pays for this room.</SheetDescription>
-      </SheetHeader>
+    <FormIdPrefix value={form.prefix}>
+      <form onSubmit={handleSubmit} noValidate className="flex flex-col gap-4 p-4">
+        <SheetHeader className="p-0">
+          <SheetTitle>{title}</SheetTitle>
+          <SheetDescription>Rent is what one tenant pays for this room.</SheetDescription>
+        </SheetHeader>
 
-      <Field name="name" label="Name" error={form.errors.name}>
-        <Input {...form.field("name")} autoComplete="off" />
-      </Field>
-      <div className="grid grid-cols-2 gap-4">
-        <Field name="rent" label="Rent (optional)" error={form.errors.rent}>
-          <PoundsInput {...form.field("rent")} />
+        <Field name="name" label="Name" error={form.errors.name}>
+          <Input {...form.field("name")} autoComplete="off" />
         </Field>
-        <Field name="rentFrequency" label="How often" error={form.errors.rentFrequency}>
-          <select {...form.field("rentFrequency")} className={selectClass}>
-            {FREQUENCY_OPTIONS.map(([value, label]) => (
-              <option key={value} value={value}>
-                {label}
+        <div className="grid grid-cols-2 gap-4">
+          <Field name="rent" label="Rent (optional)" error={form.errors.rent}>
+            <PoundsInput {...form.field("rent")} />
+          </Field>
+          <Field name="rentFrequency" label="How often" error={form.errors.rentFrequency}>
+            <select {...form.field("rentFrequency")} className={selectClass}>
+              {FREQUENCY_OPTIONS.map(([value, label]) => (
+                <option key={value} value={value}>
+                  {label}
+                </option>
+              ))}
+            </select>
+          </Field>
+        </div>
+        <Field name="status" label="Status" error={form.errors.status}>
+          <select {...form.field("status")} className={selectClass}>
+            {EDITABLE_ROOM_STATUSES.map((status) => (
+              <option key={status} value={status}>
+                {ROOM_STATUS_LABELS[status]}
               </option>
             ))}
           </select>
         </Field>
-      </div>
-      <Field name="status" label="Status" error={form.errors.status}>
-        <select {...form.field("status")} className={selectClass}>
-          {EDITABLE_ROOM_STATUSES.map((status) => (
-            <option key={status} value={status}>
-              {ROOM_STATUS_LABELS[status]}
-            </option>
-          ))}
-        </select>
-      </Field>
-      <Field name="size" label="Size in m² (optional)" error={form.errors.size}>
-        <Input
-          {...form.field("size")}
-          inputMode="decimal"
-          autoComplete="off"
-          className="max-w-28"
-        />
-      </Field>
-      <Field
-        name="features"
-        label="Features (optional)"
-        hint="Separate with commas, like double bed, en suite, desk."
-        error={form.errors.features}
-      >
-        <Input {...form.field("features")} autoComplete="off" />
-      </Field>
+        <Field name="size" label="Size in m² (optional)" error={form.errors.size}>
+          <Input
+            {...form.field("size")}
+            inputMode="decimal"
+            autoComplete="off"
+            className="max-w-28"
+          />
+        </Field>
+        <Field
+          name="features"
+          label="Features (optional)"
+          hint="Separate with commas, like double bed, en suite, desk."
+          error={form.errors.features}
+        >
+          <Input {...form.field("features")} autoComplete="off" />
+        </Field>
 
-      <Button type="submit" size="lg" disabled={pending}>
-        {pending ? "Saving…" : submitLabel}
-      </Button>
-    </form>
+        <Button type="submit" size="lg" disabled={pending}>
+          {pending ? "Saving…" : submitLabel}
+        </Button>
+      </form>
+    </FormIdPrefix>
   );
 }

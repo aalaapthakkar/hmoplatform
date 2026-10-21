@@ -1,30 +1,15 @@
-import { expect, type Page, test } from "@playwright/test";
+import { expect, test } from "@playwright/test";
+import { fakePostcodeLookup, uniqueAddress } from "./helpers";
 
 test.skip(
   !process.env.E2E_EMAIL || !process.env.E2E_PASSWORD,
   "Set E2E_EMAIL and E2E_PASSWORD in .env.local to run the live tests.",
 );
 
-/** Answers postcode lookups locally, so the test never depends on postcodes.io. */
-async function fakePostcodeLookup(page: Page) {
-  await page.route("https://api.postcodes.io/postcodes/**", (route) =>
-    route.fulfill({
-      json: {
-        status: 200,
-        result: {
-          postcode: "LS6 2AB",
-          admin_district: "Leeds",
-          region: "Yorkshire and The Humber",
-        },
-      },
-    }),
-  );
-}
-
 test("an operator can add a 6 room HMO in under a minute", async ({ page }) => {
   await fakePostcodeLookup(page);
   // Unique per run: nothing can be deleted, so every run adds a new property.
-  const address = `${Date.now()} Wizard Street`;
+  const address = uniqueAddress("Wizard Street");
   const started = Date.now();
 
   await page.goto("/properties");

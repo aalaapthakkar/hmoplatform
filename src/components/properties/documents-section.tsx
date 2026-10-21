@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { type FormEvent, useId, useRef, useState, useTransition } from "react";
 import { toast } from "sonner";
 import { archiveDocument, recordDocument } from "@/app/(app)/properties/[propertyId]/actions";
-import { Field, selectClass, useFormValues } from "@/components/forms/fields";
+import { Field, FormIdPrefix, selectClass, useFormValues } from "@/components/forms/fields";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -248,61 +248,63 @@ function UploadForm({
   return (
     <Card>
       <CardContent>
-        <form onSubmit={handleSubmit} noValidate className="flex flex-col gap-4">
-          <h3 className="font-medium">Upload a document</h3>
-          <div className="grid gap-4 sm:grid-cols-2">
-            <Field name="documentType" label="Type" error={form.errors.documentType}>
-              <select {...form.field("documentType")} className={selectClass}>
-                <option value="">Choose…</option>
-                {Object.entries(DOCUMENT_TYPE_LABELS).map(([value, label]) => (
-                  <option key={value} value={value}>
-                    {label}
-                  </option>
-                ))}
-              </select>
-            </Field>
-            <Field
-              name="expiryDate"
-              label="Expiry date (optional)"
-              hint="We'll flag it once it has expired."
-              error={form.errors.expiryDate}
-            >
-              <Input {...form.field("expiryDate")} type="date" />
-            </Field>
-          </div>
-          <div className="flex flex-col gap-2">
-            <label htmlFor={fileId} className="text-sm font-medium">
-              File
-            </label>
-            <input
-              ref={fileInput}
-              id={fileId}
-              type="file"
-              accept={ACCEPTED_FILES}
-              aria-invalid={fileError ? true : undefined}
-              aria-describedby={`${fileId}-hint${fileError ? ` ${fileId}-error` : ""}`}
-              onChange={(event) => {
-                setFile(event.target.files?.[0] ?? null);
-                setFileError(null);
-              }}
-              className="text-sm file:mr-3 file:rounded-lg file:border file:border-input file:bg-background file:px-3 file:py-1.5 file:text-sm file:font-medium"
-            />
-            <p id={`${fileId}-hint`} className="text-xs text-muted-foreground">
-              PDF, photo (JPG, PNG or HEIC) or Word document, up to 20 MB.
-            </p>
-            {fileError ? (
-              <p id={`${fileId}-error`} className="text-xs text-destructive">
-                {fileError}
+        <FormIdPrefix value={form.prefix}>
+          <form onSubmit={handleSubmit} noValidate className="flex flex-col gap-4">
+            <h3 className="font-medium">Upload a document</h3>
+            <div className="grid gap-4 sm:grid-cols-2">
+              <Field name="documentType" label="Type" error={form.errors.documentType}>
+                <select {...form.field("documentType")} className={selectClass}>
+                  <option value="">Choose…</option>
+                  {Object.entries(DOCUMENT_TYPE_LABELS).map(([value, label]) => (
+                    <option key={value} value={value}>
+                      {label}
+                    </option>
+                  ))}
+                </select>
+              </Field>
+              <Field
+                name="expiryDate"
+                label="Expiry date (optional)"
+                hint="We'll flag it once it has expired."
+                error={form.errors.expiryDate}
+              >
+                <Input {...form.field("expiryDate")} type="date" />
+              </Field>
+            </div>
+            <div className="flex flex-col gap-2">
+              <label htmlFor={fileId} className="text-sm font-medium">
+                File
+              </label>
+              <input
+                ref={fileInput}
+                id={fileId}
+                type="file"
+                accept={ACCEPTED_FILES}
+                aria-invalid={fileError ? true : undefined}
+                aria-describedby={`${fileId}-hint${fileError ? ` ${fileId}-error` : ""}`}
+                onChange={(event) => {
+                  setFile(event.target.files?.[0] ?? null);
+                  setFileError(null);
+                }}
+                className="text-sm file:mr-3 file:rounded-lg file:border file:border-input file:bg-background file:px-3 file:py-1.5 file:text-sm file:font-medium"
+              />
+              <p id={`${fileId}-hint`} className="text-xs text-muted-foreground">
+                PDF, photo (JPG, PNG or HEIC) or Word document, up to 20 MB.
               </p>
-            ) : null}
-          </div>
-          <div>
-            <Button type="submit" size="lg" disabled={pending}>
-              <Upload aria-hidden />
-              {pending ? "Uploading…" : "Upload"}
-            </Button>
-          </div>
-        </form>
+              {fileError ? (
+                <p id={`${fileId}-error`} className="text-xs text-destructive">
+                  {fileError}
+                </p>
+              ) : null}
+            </div>
+            <div>
+              <Button type="submit" size="lg" disabled={pending}>
+                <Upload aria-hidden />
+                {pending ? "Uploading…" : "Upload"}
+              </Button>
+            </div>
+          </form>
+        </FormIdPrefix>
       </CardContent>
     </Card>
   );

@@ -34,6 +34,8 @@ test("the properties pages require a signed-in user", async ({ page }) => {
   await expect(page).toHaveURL(/\/log-in$/);
   await page.goto("/properties/new");
   await expect(page).toHaveURL(/\/log-in$/);
+  await page.goto("/properties/0f8fad5b-d9cb-469f-a165-70867728950e/documents");
+  await expect(page).toHaveURL(/\/log-in$/);
 });
 
 test("onboarding requires a signed-in user", async ({ page }) => {

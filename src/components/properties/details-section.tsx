@@ -4,7 +4,7 @@ import { useRouter } from "next/navigation";
 import { type FormEvent, useTransition } from "react";
 import { toast } from "sonner";
 import { updateDetails } from "@/app/(app)/properties/[propertyId]/actions";
-import { Field, useFormValues } from "@/components/forms/fields";
+import { Field, FormIdPrefix, useFormValues } from "@/components/forms/fields";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -51,83 +51,85 @@ export function DetailsSection({ propertyId, initial }: DetailsSectionProps) {
         </p>
       </div>
 
-      <form onSubmit={handleSubmit} noValidate className="flex max-w-2xl flex-col gap-5">
-        <Field
-          name="description"
-          label="Description"
-          hint="The layout, the area, transport links."
-          error={form.errors.description}
-        >
-          <Textarea {...form.field("description")} rows={5} />
-        </Field>
-
-        <fieldset className="flex flex-col gap-3">
-          <legend className="mb-1 text-sm font-medium">Amenities</legend>
-          <div className="grid grid-cols-2 gap-2">
-            {COMMON_AMENITIES.map((amenity) => {
-              const id = `amenity-${amenity.replace(/\W+/g, "-").toLowerCase()}`;
-              return (
-                <label
-                  key={amenity}
-                  htmlFor={id}
-                  className="flex min-h-10 cursor-pointer items-center gap-3 rounded-lg border px-3 text-sm has-checked:border-primary has-checked:bg-primary/5"
-                >
-                  <input
-                    id={id}
-                    type="checkbox"
-                    checked={ticked.includes(amenity.toLowerCase())}
-                    onChange={(event) => toggleAmenity(amenity, event.target.checked)}
-                    className="size-4 accent-primary"
-                  />
-                  {amenity}
-                </label>
-              );
-            })}
-          </div>
+      <FormIdPrefix value={form.prefix}>
+        <form onSubmit={handleSubmit} noValidate className="flex max-w-2xl flex-col gap-5">
           <Field
-            name="otherAmenities"
-            label="Other amenities (optional)"
-            hint="Separate with commas, like gym, home office."
-            error={form.errors.otherAmenities}
+            name="description"
+            label="Description"
+            hint="The layout, the area, transport links."
+            error={form.errors.description}
           >
-            <Input {...form.field("otherAmenities")} autoComplete="off" />
+            <Textarea {...form.field("description")} rows={5} />
           </Field>
-        </fieldset>
 
-        <Field
-          name="houseRules"
-          label="House rules"
-          hint="For example, quiet hours, guests, smoking, bins and cleaning."
-          error={form.errors.houseRules}
-        >
-          <Textarea {...form.field("houseRules")} rows={5} />
-        </Field>
+          <fieldset className="flex flex-col gap-3">
+            <legend className="mb-1 text-sm font-medium">Amenities</legend>
+            <div className="grid grid-cols-2 gap-2">
+              {COMMON_AMENITIES.map((amenity) => {
+                const id = `${form.prefix}amenity-${amenity.replace(/\W+/g, "-").toLowerCase()}`;
+                return (
+                  <label
+                    key={amenity}
+                    htmlFor={id}
+                    className="flex min-h-10 cursor-pointer items-center gap-3 rounded-lg border px-3 text-sm has-checked:border-primary has-checked:bg-primary/5"
+                  >
+                    <input
+                      id={id}
+                      type="checkbox"
+                      checked={ticked.includes(amenity.toLowerCase())}
+                      onChange={(event) => toggleAmenity(amenity, event.target.checked)}
+                      className="size-4 accent-primary"
+                    />
+                    {amenity}
+                  </label>
+                );
+              })}
+            </div>
+            <Field
+              name="otherAmenities"
+              label="Other amenities (optional)"
+              hint="Separate with commas, like gym, home office."
+              error={form.errors.otherAmenities}
+            >
+              <Input {...form.field("otherAmenities")} autoComplete="off" />
+            </Field>
+          </fieldset>
 
-        <label
-          htmlFor="billsIncluded"
-          className="flex cursor-pointer items-start gap-3 rounded-lg border p-3 text-sm has-checked:border-primary has-checked:bg-primary/5"
-        >
-          <input
-            id="billsIncluded"
-            type="checkbox"
-            checked={form.values.billsIncluded === "yes"}
-            onChange={(event) => form.set("billsIncluded", event.target.checked ? "yes" : "no")}
-            className="mt-0.5 size-4 accent-primary"
-          />
-          <span className="flex flex-col gap-0.5">
-            <span className="font-medium">Bills included</span>
-            <span className="text-muted-foreground">
-              Rent covers energy, water, broadband and council tax.
+          <Field
+            name="houseRules"
+            label="House rules"
+            hint="For example, quiet hours, guests, smoking, bins and cleaning."
+            error={form.errors.houseRules}
+          >
+            <Textarea {...form.field("houseRules")} rows={5} />
+          </Field>
+
+          <label
+            htmlFor={`${form.prefix}billsIncluded`}
+            className="flex cursor-pointer items-start gap-3 rounded-lg border p-3 text-sm has-checked:border-primary has-checked:bg-primary/5"
+          >
+            <input
+              id={`${form.prefix}billsIncluded`}
+              type="checkbox"
+              checked={form.values.billsIncluded === "yes"}
+              onChange={(event) => form.set("billsIncluded", event.target.checked ? "yes" : "no")}
+              className="mt-0.5 size-4 accent-primary"
+            />
+            <span className="flex flex-col gap-0.5">
+              <span className="font-medium">Bills included</span>
+              <span className="text-muted-foreground">
+                Rent covers energy, water, broadband and council tax.
+              </span>
             </span>
-          </span>
-        </label>
+          </label>
 
-        <div>
-          <Button type="submit" size="lg" disabled={pending}>
-            {pending ? "Saving…" : "Save details"}
-          </Button>
-        </div>
-      </form>
+          <div>
+            <Button type="submit" size="lg" disabled={pending}>
+              {pending ? "Saving…" : "Save details"}
+            </Button>
+          </div>
+        </form>
+      </FormIdPrefix>
     </section>
   );
 }

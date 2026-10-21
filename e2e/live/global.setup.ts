@@ -26,7 +26,8 @@ setup("sign in as the test user", async ({ page }) => {
   await page.getByRole("button", { name: "Log in" }).click();
 
   const signedIn = page.waitForURL(/\/(dashboard|onboarding)$/, { timeout: 15_000 });
-  const refused = page.getByRole("alert").waitFor({ timeout: 15_000 });
+  // Only the form's own error counts: Next.js's route announcer is also an alert.
+  const refused = page.locator("form").getByRole("alert").waitFor({ timeout: 15_000 });
   const outcome = await Promise.race([signedIn.then(() => "in"), refused.then(() => "refused")]);
 
   if (outcome === "refused") {

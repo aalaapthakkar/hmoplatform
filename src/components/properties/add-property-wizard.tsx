@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { type FormEvent, useEffect, useRef, useState, useTransition } from "react";
+import { type FormEvent, useEffect, useId, useRef, useState, useTransition } from "react";
 import { toast } from "sonner";
 import { z } from "zod";
 import { createProperty } from "@/app/(app)/properties/new/actions";
@@ -10,6 +10,7 @@ import {
   Choice,
   Choices,
   Field,
+  FormIdPrefix,
   type FieldProps,
   PoundsInput,
   selectClass,
@@ -92,6 +93,7 @@ export function AddPropertyWizard({ owners, existingTags }: AddPropertyWizardPro
   // Town and council the user hasn't typed over, so a new postcode can refill them.
   const suggested = useRef({ town: "", council: "" });
   const latestLookup = useRef("");
+  const idPrefix = useId();
   const firstRender = useRef(true);
 
   useEffect(() => {
@@ -100,8 +102,8 @@ export function AddPropertyWizard({ owners, existingTags }: AddPropertyWizardPro
       return;
     }
     const firstField = STEPS[step]?.firstField;
-    if (firstField) document.getElementById(firstField)?.focus();
-  }, [step]);
+    if (firstField) document.getElementById(`${idPrefix}${firstField}`)?.focus();
+  }, [step, idPrefix]);
 
   function set<K extends keyof PropertyWizardValues>(name: K, value: string) {
     setValues((current) => ({ ...current, [name]: value }));
@@ -110,13 +112,14 @@ export function AddPropertyWizard({ owners, existingTags }: AddPropertyWizardPro
 
   function field(name: keyof PropertyWizardValues): FieldProps {
     const error = errors[name]?.[0];
+    const id = `${idPrefix}${name}`;
     return {
-      id: name,
+      id,
       name,
       value: values[name],
       onChange: (event) => set(name, event.target.value),
       "aria-invalid": error ? true : undefined,
-      "aria-describedby": [error ? `${name}-error` : null, `${name}-hint`].join(" "),
+      "aria-describedby": [error ? `${id}-error` : null, `${id}-hint`].join(" "),
     };
   }
 
@@ -199,205 +202,207 @@ export function AddPropertyWizard({ owners, existingTags }: AddPropertyWizardPro
   const tagSuggestions = existingTags.filter((tag) => !tagsInUse.includes(tag.toLowerCase()));
 
   return (
-    <form onSubmit={handleSubmit} noValidate className="flex flex-col gap-6">
-      <ol className="flex gap-2 text-sm" aria-label="Steps">
-        {STEPS.map((item, index) => (
-          <li
-            key={item.title}
-            aria-current={index === step ? "step" : undefined}
-            className={cn(
-              "flex flex-1 flex-col gap-1.5 border-t-4 pt-2",
-              index <= step ? "border-primary" : "border-muted",
-              index === step ? "font-medium" : "text-muted-foreground",
-            )}
-          >
-            <span className="text-xs text-muted-foreground">Step {index + 1}</span>
-            {item.title}
-          </li>
-        ))}
-      </ol>
-
-      {formError ? (
-        <p
-          role="alert"
-          className="rounded-lg border border-destructive/30 bg-destructive/10 p-3 text-sm text-destructive"
-        >
-          {formError}
-        </p>
-      ) : null}
-
-      {step === 0 ? (
-        <section className="flex flex-col gap-4" aria-labelledby="step-heading">
-          <h2 id="step-heading" className="text-lg font-semibold">
-            Where is it?
-          </h2>
-          <Field
-            name="postcode"
-            label="Postcode"
-            error={errors.postcode}
-            hint={<LookupMessage lookup={lookup} />}
-          >
-            <Input
-              {...field("postcode")}
-              autoFocus
-              autoComplete="postal-code"
-              onBlur={findPostcode}
-              className="max-w-40 uppercase"
-            />
-          </Field>
-          <Field name="addressLine1" label="Address line 1" error={errors.addressLine1}>
-            <Input {...field("addressLine1")} autoComplete="address-line1" />
-          </Field>
-          <Field
-            name="addressLine2"
-            label="Address line 2 (optional)"
-            hint="For example, the area of town."
-            error={errors.addressLine2}
-          >
-            <Input {...field("addressLine2")} autoComplete="address-line2" />
-          </Field>
-          <div className="grid gap-4 sm:grid-cols-2">
-            <Field name="town" label="Town or city" error={errors.town}>
-              <Input {...field("town")} autoComplete="address-level2" />
-            </Field>
-            <Field
-              name="council"
-              label="Council (optional)"
-              hint="The local council that licenses HMOs here."
-              error={errors.council}
+    <FormIdPrefix value={idPrefix}>
+      <form onSubmit={handleSubmit} noValidate className="flex flex-col gap-6">
+        <ol className="flex gap-2 text-sm" aria-label="Steps">
+          {STEPS.map((item, index) => (
+            <li
+              key={item.title}
+              aria-current={index === step ? "step" : undefined}
+              className={cn(
+                "flex flex-1 flex-col gap-1.5 border-t-4 pt-2",
+                index <= step ? "border-primary" : "border-muted",
+                index === step ? "font-medium" : "text-muted-foreground",
+              )}
             >
-              <Input {...field("council")} />
-            </Field>
-          </div>
-          <Field name="propertyType" label="Type of property" error={errors.propertyType}>
-            <select {...field("propertyType")} className={selectClass}>
-              {Object.entries(PROPERTY_TYPE_LABELS).map(([value, label]) => (
-                <option key={value} value={value}>
-                  {label}
-                </option>
-              ))}
-            </select>
-          </Field>
-        </section>
-      ) : null}
+              <span className="text-xs text-muted-foreground">Step {index + 1}</span>
+              {item.title}
+            </li>
+          ))}
+        </ol>
 
-      {step === 1 ? (
-        <section className="flex flex-col gap-4" aria-labelledby="step-heading">
-          <h2 id="step-heading" className="text-lg font-semibold">
-            How is it let?
-          </h2>
-          <Choices legend="Rental type" name="lettingType" error={errors.lettingType}>
-            <Choice
-              name="lettingType"
-              value="house_share"
-              checked={houseShare}
-              onChange={() => set("lettingType", "house_share")}
-              title="House share"
-              description="Rooms let separately to different tenants."
-            />
-            <Choice
-              name="lettingType"
-              value="single_let"
-              checked={values.lettingType === "single_let"}
-              onChange={() => set("lettingType", "single_let")}
-              title="Single let"
-              description="The whole property let to one household."
-            />
-          </Choices>
-          <div className="grid gap-4 sm:grid-cols-2">
+        {formError ? (
+          <p
+            role="alert"
+            className="rounded-lg border border-destructive/30 bg-destructive/10 p-3 text-sm text-destructive"
+          >
+            {formError}
+          </p>
+        ) : null}
+
+        {step === 0 ? (
+          <section className="flex flex-col gap-4" aria-labelledby="step-heading">
+            <h2 id="step-heading" className="text-lg font-semibold">
+              Where is it?
+            </h2>
             <Field
-              name="roomCount"
-              label={houseShare ? "Number of rooms" : "Number of bedrooms"}
-              hint={
-                houseShare
-                  ? "We'll create Room 1, Room 2 and so on. You can rename them later."
-                  : "We'll set it up as one unit called Whole property."
-              }
-              error={errors.roomCount}
+              name="postcode"
+              label="Postcode"
+              error={errors.postcode}
+              hint={<LookupMessage lookup={lookup} />}
             >
               <Input
-                {...field("roomCount")}
-                inputMode="numeric"
-                autoComplete="off"
-                className="max-w-28"
+                {...field("postcode")}
+                autoFocus
+                autoComplete="postal-code"
+                onBlur={findPostcode}
+                className="max-w-40 uppercase"
               />
             </Field>
-            <Field
-              name="roomRent"
-              label={houseShare ? "Usual rent per room (optional)" : "Rent (optional)"}
-              hint="Pounds per month. You can change it later."
-              error={errors.roomRent}
-            >
-              <PoundsInput {...field("roomRent")} />
+            <Field name="addressLine1" label="Address line 1" error={errors.addressLine1}>
+              <Input {...field("addressLine1")} autoComplete="address-line1" />
             </Field>
-          </div>
-        </section>
-      ) : null}
-
-      {step === 2 ? (
-        <section className="flex flex-col gap-4" aria-labelledby="step-heading">
-          <h2 id="step-heading" className="text-lg font-semibold">
-            How do you hold it?
-          </h2>
-          <OwnershipFields
-            values={values}
-            errors={errors}
-            field={field}
-            set={set}
-            onChooseOwnership={chooseOwnership}
-            owners={owners}
-          />
-
-          <Field
-            name="tags"
-            label="Tags (optional)"
-            hint="Separate tags with commas, like students, licensed HMO. Properties are grouped by tag."
-            error={errors.tags}
-          >
-            <Input {...field("tags")} autoComplete="off" />
-          </Field>
-          {tagSuggestions.length > 0 ? (
-            <div className="-mt-2 flex flex-wrap items-center gap-2 text-sm">
-              <span className="text-muted-foreground">Add a tag you use:</span>
-              {tagSuggestions.slice(0, 8).map((tag) => (
-                <Button
-                  key={tag}
-                  type="button"
-                  variant="outline"
-                  size="xs"
-                  onClick={() => addTag(tag)}
-                >
-                  {tag}
-                </Button>
-              ))}
+            <Field
+              name="addressLine2"
+              label="Address line 2 (optional)"
+              hint="For example, the area of town."
+              error={errors.addressLine2}
+            >
+              <Input {...field("addressLine2")} autoComplete="address-line2" />
+            </Field>
+            <div className="grid gap-4 sm:grid-cols-2">
+              <Field name="town" label="Town or city" error={errors.town}>
+                <Input {...field("town")} autoComplete="address-level2" />
+              </Field>
+              <Field
+                name="council"
+                label="Council (optional)"
+                hint="The local council that licenses HMOs here."
+                error={errors.council}
+              >
+                <Input {...field("council")} />
+              </Field>
             </div>
-          ) : null}
-        </section>
-      ) : null}
-
-      <div className="flex flex-wrap items-center gap-3 border-t pt-4">
-        <Button type="submit" size="lg" disabled={pending}>
-          {step < STEPS.length - 1 ? "Next" : pending ? "Adding…" : "Add property"}
-        </Button>
-        {step > 0 ? (
-          <Button
-            type="button"
-            variant="outline"
-            size="lg"
-            disabled={pending}
-            onClick={() => {
-              setErrors({});
-              setStep(step - 1);
-            }}
-          >
-            Back
-          </Button>
+            <Field name="propertyType" label="Type of property" error={errors.propertyType}>
+              <select {...field("propertyType")} className={selectClass}>
+                {Object.entries(PROPERTY_TYPE_LABELS).map(([value, label]) => (
+                  <option key={value} value={value}>
+                    {label}
+                  </option>
+                ))}
+              </select>
+            </Field>
+          </section>
         ) : null}
-        <Link href="/properties" className={cn(buttonVariants({ variant: "ghost", size: "lg" }))}>
-          Cancel
-        </Link>
-      </div>
-    </form>
+
+        {step === 1 ? (
+          <section className="flex flex-col gap-4" aria-labelledby="step-heading">
+            <h2 id="step-heading" className="text-lg font-semibold">
+              How is it let?
+            </h2>
+            <Choices legend="Rental type" name="lettingType" error={errors.lettingType}>
+              <Choice
+                name="lettingType"
+                value="house_share"
+                checked={houseShare}
+                onChange={() => set("lettingType", "house_share")}
+                title="House share"
+                description="Rooms let separately to different tenants."
+              />
+              <Choice
+                name="lettingType"
+                value="single_let"
+                checked={values.lettingType === "single_let"}
+                onChange={() => set("lettingType", "single_let")}
+                title="Single let"
+                description="The whole property let to one household."
+              />
+            </Choices>
+            <div className="grid gap-4 sm:grid-cols-2">
+              <Field
+                name="roomCount"
+                label={houseShare ? "Number of rooms" : "Number of bedrooms"}
+                hint={
+                  houseShare
+                    ? "We'll create Room 1, Room 2 and so on. You can rename them later."
+                    : "We'll set it up as one unit called Whole property."
+                }
+                error={errors.roomCount}
+              >
+                <Input
+                  {...field("roomCount")}
+                  inputMode="numeric"
+                  autoComplete="off"
+                  className="max-w-28"
+                />
+              </Field>
+              <Field
+                name="roomRent"
+                label={houseShare ? "Usual rent per room (optional)" : "Rent (optional)"}
+                hint="Pounds per month. You can change it later."
+                error={errors.roomRent}
+              >
+                <PoundsInput {...field("roomRent")} />
+              </Field>
+            </div>
+          </section>
+        ) : null}
+
+        {step === 2 ? (
+          <section className="flex flex-col gap-4" aria-labelledby="step-heading">
+            <h2 id="step-heading" className="text-lg font-semibold">
+              How do you hold it?
+            </h2>
+            <OwnershipFields
+              values={values}
+              errors={errors}
+              field={field}
+              set={set}
+              onChooseOwnership={chooseOwnership}
+              owners={owners}
+            />
+
+            <Field
+              name="tags"
+              label="Tags (optional)"
+              hint="Separate tags with commas, like students, licensed HMO. Properties are grouped by tag."
+              error={errors.tags}
+            >
+              <Input {...field("tags")} autoComplete="off" />
+            </Field>
+            {tagSuggestions.length > 0 ? (
+              <div className="-mt-2 flex flex-wrap items-center gap-2 text-sm">
+                <span className="text-muted-foreground">Add a tag you use:</span>
+                {tagSuggestions.slice(0, 8).map((tag) => (
+                  <Button
+                    key={tag}
+                    type="button"
+                    variant="outline"
+                    size="xs"
+                    onClick={() => addTag(tag)}
+                  >
+                    {tag}
+                  </Button>
+                ))}
+              </div>
+            ) : null}
+          </section>
+        ) : null}
+
+        <div className="flex flex-wrap items-center gap-3 border-t pt-4">
+          <Button type="submit" size="lg" disabled={pending}>
+            {step < STEPS.length - 1 ? "Next" : pending ? "Adding…" : "Add property"}
+          </Button>
+          {step > 0 ? (
+            <Button
+              type="button"
+              variant="outline"
+              size="lg"
+              disabled={pending}
+              onClick={() => {
+                setErrors({});
+                setStep(step - 1);
+              }}
+            >
+              Back
+            </Button>
+          ) : null}
+          <Link href="/properties" className={cn(buttonVariants({ variant: "ghost", size: "lg" }))}>
+            Cancel
+          </Link>
+        </div>
+      </form>
+    </FormIdPrefix>
   );
 }
 

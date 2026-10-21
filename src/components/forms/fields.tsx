@@ -1,12 +1,34 @@
 "use client";
 
-import { type ChangeEvent, type ComponentProps, type ReactNode, useState } from "react";
+import {
+  type ChangeEvent,
+  type ComponentProps,
+  createContext,
+  type ReactNode,
+  useContext,
+  useId,
+  useState,
+} from "react";
 import { z } from "zod";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { cn } from "@/lib/utils";
 
 /** Shared form building blocks: labelled fields with hints and errors, £ inputs and choice cards. */
+
+/**
+ * Each form's element ids start with its own prefix. Next.js keeps recently
+ * visited pages mounted (hidden), so two forms with the same field names can
+ * be in the document at once; the prefix keeps labels and errors pointing at
+ * the right inputs.
+ */
+const IdPrefix = createContext("");
+export const FormIdPrefix = IdPrefix.Provider;
+
+/** The element id for a field name in the current form. */
+export function useFieldId(name: string) {
+  return `${useContext(IdPrefix)}${name}`;
+}
 
 export const selectClass =
   "h-8 w-full rounded-lg border border-input bg-background px-2.5 text-sm outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 aria-invalid:border-destructive dark:bg-input/30";
@@ -24,15 +46,16 @@ export function Field({
   error?: string[];
   children: ReactNode;
 }) {
+  const id = useFieldId(name);
   return (
     <div className="flex flex-col gap-2">
-      <Label htmlFor={name}>{label}</Label>
+      <Label htmlFor={id}>{label}</Label>
       {children}
-      <div id={`${name}-hint`} className="text-xs text-muted-foreground empty:hidden">
+      <div id={`${id}-hint`} className="text-xs text-muted-foreground empty:hidden">
         {hint}
       </div>
       {error?.[0] ? (
-        <p id={`${name}-error`} className="text-xs text-destructive">
+        <p id={`${id}-error`} className="text-xs text-destructive">
           {error[0]}
         </p>
       ) : null}
@@ -62,15 +85,16 @@ export function Choices({
   error?: string[];
   children: ReactNode;
 }) {
+  const id = useFieldId(name);
   return (
     <fieldset
       className="flex flex-col gap-2"
-      aria-describedby={error?.[0] ? `${name}-error` : undefined}
+      aria-describedby={error?.[0] ? `${id}-error` : undefined}
     >
       <legend className="mb-2 text-sm font-medium">{legend}</legend>
       <div className="grid gap-2 sm:grid-cols-[repeat(auto-fit,minmax(10rem,1fr))]">{children}</div>
       {error?.[0] ? (
-        <p id={`${name}-error`} className="text-xs text-destructive">
+        <p id={`${id}-error`} className="text-xs text-destructive">
           {error[0]}
         </p>
       ) : null}
@@ -93,6 +117,7 @@ export function Choice({
   title: string;
   description?: string;
 }) {
+  const id = useFieldId(`${name}-${value}`);
   return (
     <label
       className={cn(
@@ -101,7 +126,7 @@ export function Choice({
       )}
     >
       <input
-        id={`${name}-${value}`}
+        id={id}
         type="radio"
         name={name}
         value={value}
@@ -136,6 +161,7 @@ export type FieldProps = {
  * field(name) gives an input its id, value, change handler and error wiring.
  */
 export function useFormValues<T extends Record<string, string>>(initial: T) {
+  const prefix = useId();
   const [values, setValues] = useState(initial);
   const [errors, setErrors] = useState<FieldErrors<T>>({});
 
@@ -146,14 +172,15 @@ export function useFormValues<T extends Record<string, string>>(initial: T) {
 
   function field(name: keyof T & string): FieldProps {
     const error = errors[name]?.[0];
+    const id = `${prefix}${name}`;
     return {
-      id: name,
+      id,
       name,
       value: values[name] as string,
       onChange: (event: ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) =>
         set(name, event.target.value),
       "aria-invalid": error ? true : undefined,
-      "aria-describedby": [error ? `${name}-error` : null, `${name}-hint`].join(" "),
+      "aria-describedby": [error ? `${id}-error` : null, `${id}-hint`].join(" "),
     };
   }
 
@@ -165,5 +192,5 @@ export function useFormValues<T extends Record<string, string>>(initial: T) {
     return null;
   }
 
-  return { values, setValues, errors, setErrors, set, field, validate };
+  return { prefix, values, setValues, errors, setErrors, set, field, validate };
 }

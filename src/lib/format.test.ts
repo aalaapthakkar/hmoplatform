@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { formatPence, formatUkDate, todayInLondon } from "./format";
+import { formatPence, formatUkDate, formatUkDateTime, todayInLondon } from "./format";
 
 describe("formatPence", () => {
   it("formats whole pence as pounds", () => {
@@ -31,5 +31,13 @@ describe("todayInLondon", () => {
 
   it("rolls over at midnight London time, not UTC", () => {
     expect(todayInLondon(new Date("2026-06-30T23:30:00Z"))).toBe("2026-07-01");
+  });
+});
+
+describe("formatUkDateTime", () => {
+  it("shows the London date and 24-hour time", () => {
+    expect(formatUkDateTime("2026-01-15T14:05:00Z")).toBe("15/01/2026 14:05");
+    // 13:05 UTC is 14:05 in British Summer Time.
+    expect(formatUkDateTime("2026-07-01T13:05:00Z")).toBe("01/07/2026 14:05");
   });
 });

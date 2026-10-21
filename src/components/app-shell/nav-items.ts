@@ -7,6 +7,7 @@ import {
   MessageSquare,
   PoundSterling,
   Settings,
+  UserPlus,
   ShieldCheck,
   Wrench,
 } from "lucide-react";
@@ -23,6 +24,7 @@ export const NAV_ITEMS: NavItem[] = [
   { label: "Dashboard", href: "/dashboard", icon: LayoutDashboard },
   { label: "Properties", href: "/properties", icon: Building2 },
   { label: "Occupancy", href: "/occupancy", icon: DoorOpen },
+  { label: "Onboarding", href: "/applicants", icon: UserPlus },
   { label: "Tenancies", href: "/tenancies", icon: FileText, comingSoon: true },
   { label: "Rent", href: "/rent", icon: PoundSterling, comingSoon: true },
   { label: "Compliance", href: "/compliance", icon: ShieldCheck, comingSoon: true },

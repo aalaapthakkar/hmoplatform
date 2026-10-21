@@ -57,6 +57,20 @@
       "when": 1792596229179,
       "tag": "0007_create_property",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1792597654837,
+      "tag": "0008_property_details",
+      "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1792597657140,
+      "tag": "0009_property_hub",
+      "breakpoints": true
     }
   ]
 }

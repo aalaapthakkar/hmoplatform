@@ -148,6 +148,10 @@ export type Database = {
           ownership_type: OwnershipType;
           head_rent_pence: number | null;
           tags: string[];
+          description: string | null;
+          amenities: string[];
+          house_rules: string | null;
+          bills_included: boolean;
           status: RecordStatus;
           created_at: string;
           updated_at: string;
@@ -167,6 +171,10 @@ export type Database = {
           ownership_type: OwnershipType;
           head_rent_pence?: number | null;
           tags?: string[];
+          description?: string | null;
+          amenities?: string[];
+          house_rules?: string | null;
+          bills_included?: boolean;
           status?: RecordStatus;
           created_at?: string;
           updated_at?: string;
@@ -544,6 +552,32 @@ export type Database = {
           p_tags: string[];
         };
         Returns: string;
+      };
+      set_property_ownership: {
+        Args: {
+          p_property_id: string;
+          p_ownership_type: OwnershipType;
+          p_head_rent_pence: number | null;
+          p_owner_id: string | null;
+          p_new_owner_name: string | null;
+          p_new_owner_email: string | null;
+          p_new_owner_phone: string | null;
+        };
+        Returns: undefined;
+      };
+      property_activity: {
+        Args: { p_property_id: string; p_limit?: number };
+        Returns: {
+          id: string;
+          table_name: string;
+          record_id: string;
+          action: AuditAction;
+          before: Json | null;
+          after: Json | null;
+          created_at: string;
+          actor_user_id: string | null;
+          actor_name: string | null;
+        }[];
       };
     };
     Enums: {

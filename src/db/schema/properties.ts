@@ -1,5 +1,6 @@
 import { sql } from "drizzle-orm";
 import {
+  boolean,
   check,
   index,
   integer,
@@ -51,6 +52,15 @@ export const properties = pgTable(
       .array()
       .notNull()
       .default(sql`'{}'::text[]`),
+    /** Free text for adverts and the team, e.g. the layout and the area. */
+    description: text("description"),
+    /** Shared facilities, e.g. "Wi-Fi", "washing machine". */
+    amenities: text("amenities")
+      .array()
+      .notNull()
+      .default(sql`'{}'::text[]`),
+    houseRules: text("house_rules"),
+    billsIncluded: boolean("bills_included").notNull().default(false),
     status: recordStatus("status").notNull().default("active"),
     ...timestamps,
   },
@@ -65,6 +75,8 @@ export const properties = pgTable(
       sql`ownership_type <> 'master_lease' or head_rent_pence is not null`,
     ),
     check("properties_bedrooms_range", sql`bedrooms between 1 and 50`),
+    check("properties_description_length", sql`char_length(description) <= 5000`),
+    check("properties_house_rules_length", sql`char_length(house_rules) <= 5000`),
   ],
 ).enableRLS();
 

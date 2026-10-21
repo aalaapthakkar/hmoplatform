@@ -717,6 +717,229 @@ describe("create_property", () => {
   });
 });
 
+describe("property hub", () => {
+  type OwnershipInput = {
+    p_property_id: string;
+    p_ownership_type: string;
+    p_head_rent_pence?: number | null;
+    p_owner_id?: string | null;
+    p_new_owner_name?: string | null;
+  };
+
+  /** Calls set_property_ownership with named arguments. */
+  async function setOwnership(input: OwnershipInput) {
+    const args = {
+      p_head_rent_pence: null,
+      p_owner_id: null,
+      p_new_owner_name: null,
+      p_new_owner_email: null,
+      p_new_owner_phone: null,
+      ...input,
+    };
+    const named = Object.keys(args)
+      .map((name, index) => `${name} => $${index + 1}`)
+      .join(", ");
+    await db.query(`select public.set_property_ownership(${named})`, Object.values(args));
+  }
+
+  async function activeOwners(propertyId: string) {
+    const { rows } = await db.query<{ owner_id: string }>(
+      "select owner_id from public.property_owners where property_id = $1 and status = 'active' order by owner_id",
+      [propertyId],
+    );
+    return rows.map((row) => row.owner_id);
+  }
+
+  it("gives properties empty details by default", async () => {
+    const { rows } = await db.query(
+      "select description, amenities, house_rules, bills_included from public.properties where id = $1",
+      [aliceIds.properties],
+    );
+    expect(rows).toEqual([
+      { description: null, amenities: [], house_rules: null, bills_included: false },
+    ]);
+  });
+
+  it("won't archive a room with a current tenancy, but will once it has ended", async () => {
+    await expect(
+      t.asUser(ALICE, () =>
+        db.query("update public.rooms set status = 'archived' where id = $1", [aliceIds.rooms]),
+      ),
+    ).rejects.toThrow(/current tenancy/);
+
+    await t.asUser(ALICE, async () => {
+      await db.query("update public.tenancies set status = 'ended' where id = $1", [
+        aliceIds.tenancies,
+      ]);
+      await db.query("update public.rooms set status = 'archived' where id = $1", [aliceIds.rooms]);
+      const { rows } = await db.query("select status from public.rooms where id = $1", [
+        aliceIds.rooms,
+      ]);
+      expect(rows).toEqual([{ status: "archived" }]);
+    });
+  });
+
+  it("switches owners by removing the old link, and brings it back when chosen again", async () => {
+    await t.asUser(ALICE, async () => {
+      const property = aliceIds.properties;
+      await setOwnership({
+        p_property_id: property,
+        p_ownership_type: "managed",
+        p_new_owner_name: "Second Owner",
+      });
+      const [second] = await activeOwners(property);
+      expect(second).toBeDefined();
+      expect(second).not.toBe(aliceIds.owners);
+
+      // The first owner (linked in createRecords) was replaced, not deleted.
+      const { rows } = await db.query(
+        "select status from public.property_owners where property_id = $1 and owner_id = $2",
+        [property, aliceIds.owners],
+      );
+      expect(rows).toEqual([{ status: "removed" }]);
+
+      await setOwnership({
+        p_property_id: property,
+        p_ownership_type: "master_lease",
+        p_head_rent_pence: 150000,
+        p_owner_id: aliceIds.owners,
+      });
+      expect(await activeOwners(property)).toEqual([aliceIds.owners]);
+      const held = await db.query(
+        "select ownership_type, head_rent_pence from public.properties where id = $1",
+        [property],
+      );
+      expect(held.rows).toEqual([{ ownership_type: "master_lease", head_rent_pence: 150000 }]);
+
+      await setOwnership({ p_property_id: property, p_ownership_type: "owned" });
+      expect(await activeOwners(property)).toEqual([]);
+    });
+  });
+
+  it("checks ownership rules", async () => {
+    const attempt = (input: OwnershipInput) => t.asUser(ALICE, () => setOwnership(input));
+    await expect(
+      attempt({ p_property_id: aliceIds.properties, p_ownership_type: "managed" }),
+    ).rejects.toThrow(/needs an owner/);
+    await expect(
+      attempt({ p_property_id: aliceIds.properties, p_ownership_type: "master_lease" }),
+    ).rejects.toThrow(/properties_master_lease_has_head_rent/);
+    await expect(
+      attempt({
+        p_property_id: aliceIds.properties,
+        p_ownership_type: "managed",
+        p_owner_id: bobIds.owners,
+      }),
+    ).rejects.toThrow(/property_owners_owner_fk/);
+  });
+
+  it("doesn't let another organisation change ownership", async () => {
+    await expect(
+      t.asUser(BOB, () =>
+        setOwnership({ p_property_id: aliceIds.properties, p_ownership_type: "owned" }),
+      ),
+    ).rejects.toThrow(/Property not found/);
+    await expect(
+      t.asAnon(() =>
+        db.query(
+          "select public.set_property_ownership($1, 'owned', null, null, null, null, null)",
+          [aliceIds.properties],
+        ),
+      ),
+    ).rejects.toThrow(/permission denied/);
+  });
+
+  it("shows a property's activity to admins, with who made each change", async () => {
+    await t.asUser(ALICE, async () => {
+      await db.query("update public.rooms set rent_pence = 61000 where property_id = $1", [
+        aliceIds.properties,
+      ]);
+      const { rows } = await db.query<{ table_name: string; action: string; actor_name: string }>(
+        "select table_name, action, actor_name from public.property_activity($1)",
+        [aliceIds.properties],
+      );
+      expect(rows[0]).toEqual({ table_name: "rooms", action: "update", actor_name: "Alice Adams" });
+      const tables = new Set(rows.map((row) => row.table_name));
+      for (const table of [
+        "properties",
+        "rooms",
+        "tenancies",
+        "tenancy_tenants",
+        "property_owners",
+        "documents",
+      ]) {
+        expect(tables).toContain(table);
+      }
+    });
+  });
+
+  it("shows activity to nobody else", async () => {
+    for (const user of [CAROL, BOB, DAVE]) {
+      const rows = await t.asUser(user, async () => {
+        const result = await db.query("select * from public.property_activity($1)", [
+          aliceIds.properties,
+        ]);
+        return result.rows;
+      });
+      expect(rows).toEqual([]);
+    }
+    await expect(
+      t.asAnon(() => db.query("select * from public.property_activity($1)", [aliceIds.properties])),
+    ).rejects.toThrow(/permission denied/);
+  });
+
+  describe("document storage", () => {
+    const upload = (path: string) =>
+      db.query("insert into storage.objects (bucket_id, name) values ('documents', $1)", [path]);
+
+    it("is a private bucket with a size limit and safe file types", async () => {
+      const { rows } = await db.query(
+        "select public, file_size_limit::int as limit, 'application/pdf' = any(allowed_mime_types) as pdf, 'text/html' = any(allowed_mime_types) as html from storage.buckets where id = 'documents'",
+      );
+      expect(rows).toEqual([{ public: false, limit: 20971520, pdf: true, html: false }]);
+    });
+
+    it("lets members upload only into their own organisation's folder", async () => {
+      await t.asUser(CAROL, () => upload(`${aliceOrg}/properties/x/gas.pdf`));
+      await expect(t.asUser(ALICE, () => upload(`${bobOrg}/properties/x/gas.pdf`))).rejects.toThrow(
+        /row-level security/,
+      );
+      await expect(t.asUser(ALICE, () => upload("not-an-org/gas.pdf"))).rejects.toThrow(
+        /row-level security/,
+      );
+      await expect(
+        t.asUser(DAVE, () => upload(`${aliceOrg}/properties/x/gas.pdf`)),
+      ).rejects.toThrow(/row-level security/);
+    });
+
+    it("shows files only to their organisation, and never deletes or replaces them", async () => {
+      const path = `${aliceOrg}/properties/x/eicr.pdf`;
+      await t.asUser(ALICE, () => upload(path), true);
+
+      const seenBy = (user: string) =>
+        t.asUser(user, async () => {
+          const { rows } = await db.query<{ name: string }>(
+            "select name from storage.objects where bucket_id = 'documents'",
+          );
+          return rows.map((row) => row.name);
+        });
+      expect(await seenBy(ALICE)).toContain(path);
+      expect(await seenBy(BOB)).toEqual([]);
+
+      await t.asUser(ALICE, async () => {
+        expect((await db.query("delete from storage.objects")).affectedRows).toBe(0);
+        expect(
+          (await db.query("update storage.objects set name = 'swapped.pdf'")).affectedRows,
+        ).toBe(0);
+      });
+      const anon = await t.asAnon(
+        async () => (await db.query("select name from storage.objects")).rows,
+      );
+      expect(anon).toEqual([]);
+    });
+  });
+});
+
 describe("role migration (0002)", () => {
   async function databaseBefore0002(role: string) {
     const legacy = new PGlite();

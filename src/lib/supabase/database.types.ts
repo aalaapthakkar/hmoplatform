@@ -46,6 +46,14 @@ type SignatureRequestStatus =
   "sent" | "partly_signed" | "completed" | "declined" | "cancelled" | "error";
 type SignerRole = "tenant" | "guarantor" | "organisation";
 type SignerStatus = "awaiting" | "signed" | "declined";
+type LedgerStatus = "active" | "voided";
+type RentChargeKind = "rent" | "other";
+type RentChargeSource = "schedule" | "manual";
+type PaymentMethod = "bank_transfer" | "standing_order" | "card" | "cash" | "other";
+type MaintenanceUrgency = "low" | "normal" | "urgent" | "emergency";
+type MaintenanceStatus = "reported" | "in_progress" | "done" | "closed";
+type MessageSender = "tenant" | "staff";
+type ServiceMethod = "portal" | "email" | "post" | "by_hand";
 type DocumentType =
   | "gas_safety"
   | "eicr"
@@ -177,6 +185,7 @@ export type Database = {
           amenities: string[];
           house_rules: string | null;
           bills_included: boolean;
+          welcome_pack: string | null;
           status: RecordStatus;
           created_at: string;
           updated_at: string;
@@ -200,6 +209,7 @@ export type Database = {
           amenities?: string[];
           house_rules?: string | null;
           bills_included?: boolean;
+          welcome_pack?: string | null;
           status?: RecordStatus;
           created_at?: string;
           updated_at?: string;
@@ -268,6 +278,7 @@ export type Database = {
           last_name: string;
           email: string | null;
           phone: string | null;
+          user_id: string | null;
           status: RecordStatus;
           created_at: string;
           updated_at: string;
@@ -279,6 +290,7 @@ export type Database = {
           last_name: string;
           email?: string | null;
           phone?: string | null;
+          user_id?: string | null;
           status?: RecordStatus;
           created_at?: string;
           updated_at?: string;
@@ -913,6 +925,222 @@ export type Database = {
         Update: Partial<Database["public"]["Tables"]["esign_events"]["Insert"]>;
         Relationships: [];
       };
+      tenant_portal_invites: {
+        Row: {
+          id: string;
+          org_id: string;
+          tenant_id: string;
+          token_hash: string;
+          expires_at: string;
+          used_at: string | null;
+          used_by: string | null;
+          revoked_at: string | null;
+          created_by: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          org_id: string;
+          tenant_id: string;
+          token_hash: string;
+          expires_at: string;
+          used_at?: string | null;
+          used_by?: string | null;
+          revoked_at?: string | null;
+          created_by?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: Partial<Database["public"]["Tables"]["tenant_portal_invites"]["Insert"]>;
+        Relationships: [];
+      };
+      rent_charges: {
+        Row: {
+          id: string;
+          org_id: string;
+          tenancy_id: string;
+          kind: RentChargeKind;
+          source: RentChargeSource;
+          period_start: string | null;
+          period_end: string | null;
+          due_date: string;
+          amount_pence: number;
+          description: string;
+          status: LedgerStatus;
+          void_reason: string | null;
+          voided_at: string | null;
+          voided_by: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          org_id: string;
+          tenancy_id: string;
+          kind?: RentChargeKind;
+          source?: RentChargeSource;
+          period_start?: string | null;
+          period_end?: string | null;
+          due_date: string;
+          amount_pence: number;
+          description: string;
+          status?: LedgerStatus;
+          void_reason?: string | null;
+          voided_at?: string | null;
+          voided_by?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: Partial<Database["public"]["Tables"]["rent_charges"]["Insert"]>;
+        Relationships: [];
+      };
+      rent_payments: {
+        Row: {
+          id: string;
+          org_id: string;
+          tenancy_id: string;
+          paid_on: string;
+          amount_pence: number;
+          method: PaymentMethod;
+          reference: string | null;
+          status: LedgerStatus;
+          void_reason: string | null;
+          voided_at: string | null;
+          voided_by: string | null;
+          recorded_by: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          org_id: string;
+          tenancy_id: string;
+          paid_on: string;
+          amount_pence: number;
+          method: PaymentMethod;
+          reference?: string | null;
+          status?: LedgerStatus;
+          void_reason?: string | null;
+          voided_at?: string | null;
+          voided_by?: string | null;
+          recorded_by?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: Partial<Database["public"]["Tables"]["rent_payments"]["Insert"]>;
+        Relationships: [];
+      };
+      maintenance_requests: {
+        Row: {
+          id: string;
+          org_id: string;
+          property_id: string;
+          room_id: string | null;
+          tenancy_id: string | null;
+          reported_by: string | null;
+          title: string;
+          description: string;
+          location: string | null;
+          urgency: MaintenanceUrgency;
+          status: MaintenanceStatus;
+          resolved_at: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          org_id: string;
+          property_id: string;
+          room_id?: string | null;
+          tenancy_id?: string | null;
+          reported_by?: string | null;
+          title: string;
+          description: string;
+          location?: string | null;
+          urgency?: MaintenanceUrgency;
+          status?: MaintenanceStatus;
+          resolved_at?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: Partial<Database["public"]["Tables"]["maintenance_requests"]["Insert"]>;
+        Relationships: [];
+      };
+      maintenance_photos: {
+        Row: {
+          id: string;
+          org_id: string;
+          request_id: string;
+          file_path: string;
+          file_name: string;
+          uploaded_by: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          org_id: string;
+          request_id: string;
+          file_path: string;
+          file_name: string;
+          uploaded_by?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: Partial<Database["public"]["Tables"]["maintenance_photos"]["Insert"]>;
+        Relationships: [];
+      };
+      messages: {
+        Row: {
+          id: string;
+          org_id: string;
+          tenancy_id: string;
+          sender: MessageSender;
+          author_user_id: string | null;
+          body: string;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          org_id: string;
+          tenancy_id: string;
+          sender: MessageSender;
+          author_user_id?: string | null;
+          body: string;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: Partial<Database["public"]["Tables"]["messages"]["Insert"]>;
+        Relationships: [];
+      };
+      document_services: {
+        Row: {
+          id: string;
+          org_id: string;
+          document_id: string;
+          tenancy_id: string;
+          served_at: string;
+          method: ServiceMethod;
+          served_by: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          org_id: string;
+          document_id: string;
+          tenancy_id: string;
+          served_at?: string;
+          method?: ServiceMethod;
+          served_by?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: Partial<Database["public"]["Tables"]["document_services"]["Insert"]>;
+        Relationships: [];
+      };
     };
     Views: { [_ in never]: never };
     Functions: {
@@ -1068,6 +1296,14 @@ export type Database = {
         };
         Returns: string;
       };
+      create_tenant_invite: {
+        Args: { p_tenant_id: string; p_token_hash: string };
+        Returns: string;
+      };
+      tenant_invite_info: { Args: { p_token: string }; Returns: Json };
+      claim_tenant_invite: { Args: { p_token: string }; Returns: undefined };
+      tenant_home: { Args: Record<string, never>; Returns: Json };
+      sync_rent_charges: { Args: { p_tenancy_id: string }; Returns: number };
       property_activity: {
         Args: { p_property_id: string; p_limit?: number };
         Returns: {
@@ -1109,6 +1345,14 @@ export type Database = {
       signature_request_status: SignatureRequestStatus;
       signer_role: SignerRole;
       signer_status: SignerStatus;
+      ledger_status: LedgerStatus;
+      rent_charge_kind: RentChargeKind;
+      rent_charge_source: RentChargeSource;
+      payment_method: PaymentMethod;
+      maintenance_urgency: MaintenanceUrgency;
+      maintenance_status: MaintenanceStatus;
+      message_sender: MessageSender;
+      service_method: ServiceMethod;
       document_type: DocumentType;
     };
     CompositeTypes: { [_ in never]: never };

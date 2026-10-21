@@ -141,6 +141,20 @@
       "when": 1792613298090,
       "tag": "0019_activity_includes_signing",
       "breakpoints": true
+    },
+    {
+      "idx": 20,
+      "version": "7",
+      "when": 1792614713591,
+      "tag": "0020_tenant_portal",
+      "breakpoints": true
+    },
+    {
+      "idx": 21,
+      "version": "7",
+      "when": 1792614715912,
+      "tag": "0021_tenant_portal_functions",
+      "breakpoints": true
     }
   ]
 }

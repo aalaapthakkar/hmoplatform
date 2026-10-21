@@ -61,6 +61,8 @@ export const properties = pgTable(
       .default(sql`'{}'::text[]`),
     houseRules: text("house_rules"),
     billsIncluded: boolean("bills_included").notNull().default(false),
+    /** Shown to tenants in their portal: bins, Wi-Fi, who to call. Simple formatting. */
+    welcomePack: text("welcome_pack"),
     status: recordStatus("status").notNull().default("active"),
     ...timestamps,
   },
@@ -77,6 +79,7 @@ export const properties = pgTable(
     check("properties_bedrooms_range", sql`bedrooms between 1 and 50`),
     check("properties_description_length", sql`char_length(description) <= 5000`),
     check("properties_house_rules_length", sql`char_length(house_rules) <= 5000`),
+    check("properties_welcome_pack_length", sql`char_length(welcome_pack) <= 20000`),
   ],
 ).enableRLS();
 

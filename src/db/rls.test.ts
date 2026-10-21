@@ -42,6 +42,12 @@ const BUSINESS_TABLES = [
   "signature_requests",
   "signature_request_signers",
   "esign_events",
+  "tenant_portal_invites",
+  "rent_charges",
+  "rent_payments",
+  "maintenance_requests",
+  "maintenance_photos",
+  "document_services",
 ] as const;
 
 type BusinessTable = (typeof BUSINESS_TABLES)[number];
@@ -128,6 +134,30 @@ const INSERTS: Record<
     sql: "insert into public.esign_events (org_id, request_id, event_key, event_type) values ($1, $2, gen_random_uuid()::text, 'test') returning id",
     params: [orgId, parents.signature_requests],
   }),
+  tenant_portal_invites: (orgId, parents) => ({
+    sql: "insert into public.tenant_portal_invites (org_id, tenant_id, token_hash, expires_at) values ($1, $2, encode(sha256(convert_to(gen_random_uuid()::text, 'UTF8')), 'hex'), now() + interval '1 day') returning id",
+    params: [orgId, parents.tenants],
+  }),
+  rent_charges: (orgId, parents) => ({
+    sql: "insert into public.rent_charges (org_id, tenancy_id, due_date, amount_pence, description) values ($1, $2, '2026-09-01', 1000, 'Test charge') returning id",
+    params: [orgId, parents.tenancies],
+  }),
+  rent_payments: (orgId, parents) => ({
+    sql: "insert into public.rent_payments (org_id, tenancy_id, paid_on, amount_pence, method) values ($1, $2, '2026-09-01', 1000, 'bank_transfer') returning id",
+    params: [orgId, parents.tenancies],
+  }),
+  maintenance_requests: (orgId, parents) => ({
+    sql: "insert into public.maintenance_requests (org_id, property_id, title, description) values ($1, $2, 'Leaking tap', 'Drips all night') returning id",
+    params: [orgId, parents.properties],
+  }),
+  maintenance_photos: (orgId, parents) => ({
+    sql: "insert into public.maintenance_photos (org_id, request_id, file_path, file_name) values ($1, $2, $1::uuid::text || '/maintenance/' || $2::uuid::text || '/tap.jpg', 'tap.jpg') returning id",
+    params: [orgId, parents.maintenance_requests],
+  }),
+  document_services: (orgId, parents) => ({
+    sql: "insert into public.document_services (org_id, document_id, tenancy_id) values ($1, $2, $3) returning id",
+    params: [orgId, parents.documents, parents.tenancies],
+  }),
 };
 
 /** The business records each table's rows point at. */
@@ -150,6 +180,12 @@ const PARENTS: Record<BusinessTable, BusinessTable[]> = {
   signature_requests: ["tenancies"],
   signature_request_signers: ["signature_requests"],
   esign_events: ["signature_requests"],
+  tenant_portal_invites: ["tenants"],
+  rent_charges: ["tenancies"],
+  rent_payments: ["tenancies"],
+  maintenance_requests: ["properties"],
+  maintenance_photos: ["maintenance_requests"],
+  document_services: ["documents", "tenancies"],
 };
 
 let t: TestDatabase;
@@ -2217,6 +2253,531 @@ describe("tenancy documents and e-signing", () => {
     await expect(t.asAnon(() => db.query("select * from private.esign_settings"))).rejects.toThrow(
       /permission denied/,
     );
+  });
+});
+
+describe("tenant portal", () => {
+  // Tina and Tom rent rooms from Alice's org; Beth rents from Bob's.
+  const TINA = "aaaaaaaa-0000-4000-8000-00000000000a";
+  const TOM = "aaaaaaaa-0000-4000-8000-00000000000b";
+  const BETH = "aaaaaaaa-0000-4000-8000-00000000000c";
+  const hash = (token: string) => createHash("sha256").update(token).digest("hex");
+  type Home = { tenancy: string; tenant: string; property: string; room: string };
+  let tina: Home;
+  let tom: Home;
+  let beth: Home;
+  let servedDoc: string;
+  let unservedDoc: string;
+
+  /** Rows a user can see, as ids. */
+  const visible = (user: string, sql: string, params: unknown[] = []) =>
+    t.asUser(user, async () =>
+      (await db.query<{ id: string }>(sql, params)).rows.map((row) => row.id),
+    );
+
+  /** Lets a room from today as staff, invites the tenant, and the tenant joins. */
+  async function letAndJoin(
+    staff: string,
+    orgId: string,
+    propertyId: string,
+    user: string,
+    first: string,
+  ): Promise<Home> {
+    const token = randomBytes(32).toString("base64url");
+    const home = await t.asUser(
+      staff,
+      async () => {
+        const room = (
+          await db.query<{ id: string }>(
+            "insert into public.rooms (org_id, property_id, name) values ($1, $2, $3) returning id",
+            [orgId, propertyId, `${first}'s room`],
+          )
+        ).rows[0]!.id;
+        const tenancy = (
+          await db.query<{ id: string }>(
+            "select public.create_tenancy($1, $2, 'Tenant', null, null, current_date - 40, 60000, 'monthly', 1, 0) as id",
+            [room, first],
+          )
+        ).rows[0]!.id;
+        const tenant = (
+          await db.query<{ tenant_id: string }>(
+            "select tenant_id from public.tenancy_tenants where tenancy_id = $1",
+            [tenancy],
+          )
+        ).rows[0]!.tenant_id;
+        await db.query("select public.create_tenant_invite($1, $2)", [tenant, hash(token)]);
+        return { tenancy, tenant, property: propertyId, room };
+      },
+      true,
+    );
+    await t.createAuthUser(user, `${first.toLowerCase()}@example.test`, `${first} Tenant`);
+    await t.asUser(user, () => db.query("select public.claim_tenant_invite($1)", [token]), true);
+    return home;
+  }
+
+  beforeAll(async () => {
+    tina = await letAndJoin(ALICE, aliceOrg, aliceIds.properties, TINA, "Tina");
+    tom = await letAndJoin(ALICE, aliceOrg, aliceIds.properties, TOM, "Tom");
+    beth = await letAndJoin(BOB, bobOrg, bobIds.properties, BETH, "Beth");
+
+    await t.asUser(
+      ALICE,
+      async () => {
+        for (const home of [tina, tom]) {
+          await db.query("select public.sync_rent_charges($1)", [home.tenancy]);
+          await db.query(
+            "insert into public.rent_payments (org_id, tenancy_id, paid_on, amount_pence, method) values ($1, $2, current_date, 60000, 'bank_transfer')",
+            [aliceOrg, home.tenancy],
+          );
+          await db.query(
+            "insert into public.messages (org_id, tenancy_id, sender, body) values ($1, $2, 'staff', 'Welcome!')",
+            [aliceOrg, home.tenancy],
+          );
+        }
+        const doc = (path: string) =>
+          db.query<{ id: string }>(
+            "insert into public.documents (org_id, document_type, file_path, file_name, property_id) values ($1, 'gas_safety', $2, 'gas.pdf', $3) returning id",
+            [aliceOrg, path, aliceIds.properties],
+          );
+        servedDoc = (await doc(`${aliceOrg}/properties/x/served-gas.pdf`)).rows[0]!.id;
+        unservedDoc = (await doc(`${aliceOrg}/properties/x/private-gas.pdf`)).rows[0]!.id;
+        await db.query(
+          "insert into public.document_services (org_id, document_id, tenancy_id) values ($1, $2, $3)",
+          [aliceOrg, servedDoc, tina.tenancy],
+        );
+      },
+      true,
+    );
+    for (const name of ["served-gas.pdf", "private-gas.pdf"]) {
+      await db.query("insert into storage.objects (bucket_id, name) values ('documents', $1)", [
+        `${aliceOrg}/properties/x/${name}`,
+      ]);
+    }
+  }, 60_000);
+
+  describe("joining", () => {
+    it("shows who an invite is for, accepts it once, and refuses staff accounts", async () => {
+      const token = randomBytes(32).toString("base64url");
+      const tenant = await t.asUser(
+        ALICE,
+        async () => {
+          const room = (
+            await db.query<{ id: string }>(
+              "insert into public.rooms (org_id, property_id, name) values ($1, $2, 'Invite room') returning id",
+              [aliceOrg, aliceIds.properties],
+            )
+          ).rows[0]!.id;
+          const tenancy = (
+            await db.query<{ id: string }>(
+              "select public.create_tenancy($1, 'Ivy', 'Invitee', 'ivy@example.test', null, current_date + 5, 50000, 'monthly', 1, 0) as id",
+              [room],
+            )
+          ).rows[0]!.id;
+          const id = (
+            await db.query<{ tenant_id: string }>(
+              "select tenant_id from public.tenancy_tenants where tenancy_id = $1",
+              [tenancy],
+            )
+          ).rows[0]!.tenant_id;
+          await db.query("select public.create_tenant_invite($1, $2)", [id, hash(token)]);
+          return id;
+        },
+        true,
+      );
+
+      const info = await t.asAnon(
+        async () =>
+          (await db.query("select public.tenant_invite_info($1) as info", [token])).rows[0],
+      );
+      expect(info).toEqual({
+        info: {
+          organisation: expect.stringMatching(/^Alice Lettings/),
+          firstName: "Ivy",
+          email: "ivy@example.test",
+        },
+      });
+
+      await expect(
+        t.asUser(CAROL, () => db.query("select public.claim_tenant_invite($1)", [token])),
+      ).rejects.toThrow(/staff account/);
+      const IVY = "aaaaaaaa-0000-4000-8000-0000000000ff";
+      await t.createAuthUser(IVY, "ivy@example.test");
+      await t.asUser(IVY, () => db.query("select public.claim_tenant_invite($1)", [token]), true);
+      await expect(
+        t.asUser(IVY, () => db.query("select public.claim_tenant_invite($1)", [token])),
+      ).rejects.toThrow(/isn't valid any more/);
+      await expect(
+        t.asUser(ALICE, () =>
+          db.query("select public.create_tenant_invite($1, $2)", [
+            tenant,
+            hash("another-token-value-123"),
+          ]),
+        ),
+      ).rejects.toThrow(/already joined/);
+    });
+  });
+
+  describe("tenants only ever see their own tenancy", () => {
+    it("sees only their own tenant record and tenancy", async () => {
+      expect(await visible(TINA, "select id from public.tenancies")).toEqual([tina.tenancy]);
+      expect(await visible(TINA, "select id from public.tenants")).toEqual([tina.tenant]);
+      expect(await visible(BETH, "select id from public.tenancies")).toEqual([beth.tenancy]);
+    });
+
+    it("gets only safe details of their own home", async () => {
+      const home = await t.asUser(
+        TINA,
+        async () =>
+          (
+            await db.query<{ home: Record<string, unknown>[] }>(
+              "select public.tenant_home() as home",
+            )
+          ).rows[0]!.home,
+      );
+      expect(home).toHaveLength(1);
+      expect(home[0]).toMatchObject({
+        tenancyId: tina.tenancy,
+        rentPence: 60000,
+        roomId: tina.room,
+      });
+      expect(JSON.stringify(home)).not.toMatch(/head_rent|headRent|owner|tags/);
+    });
+
+    it.each([
+      "properties",
+      "rooms",
+      "owners",
+      "property_owners",
+      "tenancy_tenants",
+      "organisations",
+      "memberships",
+      "audit_log",
+      "onboardings",
+      "onboarding_steps",
+      "right_to_rent_checks",
+      "reminders",
+      "signature_requests",
+      "tenancy_guarantors",
+      "document_templates",
+      "tenant_portal_invites",
+    ])("sees nothing in %s", async (table) => {
+      expect(await visible(TINA, `select id from public.${table}`)).toEqual([]);
+    });
+
+    it("sees only their own charges and payments, and can't change them", async () => {
+      const charges = await t.asUser(
+        TINA,
+        async () =>
+          (
+            await db.query<{ tenancy_id: string }>(
+              "select distinct tenancy_id from public.rent_charges",
+            )
+          ).rows,
+      );
+      expect(charges).toEqual([{ tenancy_id: tina.tenancy }]);
+      const payments = await t.asUser(
+        TINA,
+        async () =>
+          (
+            await db.query<{ tenancy_id: string }>(
+              "select distinct tenancy_id from public.rent_payments",
+            )
+          ).rows,
+      );
+      expect(payments).toEqual([{ tenancy_id: tina.tenancy }]);
+
+      await expect(
+        t.asUser(TINA, () =>
+          db.query(
+            "insert into public.rent_payments (org_id, tenancy_id, paid_on, amount_pence, method) values ($1, $2, current_date, 999999, 'cash')",
+            [aliceOrg, tina.tenancy],
+          ),
+        ),
+      ).rejects.toThrow(/row-level security/);
+      const changed = await t.asUser(
+        TINA,
+        async () =>
+          (
+            await db.query(
+              "update public.rent_charges set amount_pence = 1 where tenancy_id = $1",
+              [tina.tenancy],
+            )
+          ).affectedRows,
+      );
+      expect(changed).toBe(0);
+      await expect(
+        t.asUser(TINA, () => db.query("select public.sync_rent_charges($1)", [tom.tenancy])),
+      ).rejects.toThrow(/Tenancy not found/);
+    });
+
+    it("reports repairs only for their own home, always as 'reported' and as themselves", async () => {
+      const report = (user: string, home: Home, extra = "") =>
+        t.asUser(
+          user,
+          () =>
+            db.query<{ id: string }>(
+              `insert into public.maintenance_requests (org_id, property_id, room_id, tenancy_id, reported_by, title, description${extra ? ", status" : ""}) values ($1, $2, $3, $4, $5, 'Boiler', 'No hot water'${extra ? `, '${extra}'` : ""}) returning id`,
+              [aliceOrg, home.property, home.room, home.tenancy, user],
+            ),
+          true,
+        );
+      const mine = (await report(TINA, tina)).rows[0]!.id;
+      await expect(report(TINA, tom)).rejects.toThrow(/row-level security/);
+      await expect(report(TINA, tina, "done")).rejects.toThrow(/row-level security/);
+      await expect(
+        t.asUser(TINA, () =>
+          db.query(
+            "insert into public.maintenance_requests (org_id, property_id, room_id, tenancy_id, reported_by, title, description) values ($1, $2, $3, $4, $5, 'Spoof', 'x')",
+            [aliceOrg, tina.property, tina.room, tina.tenancy, TOM],
+          ),
+        ),
+      ).rejects.toThrow(/row-level security/);
+      await expect(
+        t.asUser(TINA, () =>
+          db.query(
+            "insert into public.maintenance_requests (org_id, property_id, room_id, tenancy_id, reported_by, title, description) values ($1, $2, $3, $4, $5, 'Wrong room', 'x')",
+            [aliceOrg, tina.property, tom.room, tina.tenancy, TINA],
+          ),
+        ),
+      ).rejects.toThrow(/row-level security/);
+
+      const closed = await t.asUser(
+        TINA,
+        async () =>
+          (
+            await db.query("update public.maintenance_requests set status = 'done' where id = $1", [
+              mine,
+            ])
+          ).affectedRows,
+      );
+      expect(closed).toBe(0);
+      expect(
+        await visible(TOM, "select id from public.maintenance_requests where id = $1", [mine]),
+      ).toEqual([]);
+
+      // Photos: only into their own repair's folder, and only they (and staff) can see them.
+      const path = `${aliceOrg}/maintenance/${mine}/boiler.jpg`;
+      await t.asUser(
+        TINA,
+        async () => {
+          await db.query("insert into storage.objects (bucket_id, name) values ('documents', $1)", [
+            path,
+          ]);
+          await db.query(
+            "insert into public.maintenance_photos (org_id, request_id, file_path, file_name, uploaded_by) values ($1, $2, $3, 'boiler.jpg', $4)",
+            [aliceOrg, mine, path, TINA],
+          );
+        },
+        true,
+      );
+      await expect(
+        t.asUser(TOM, () =>
+          db.query("insert into storage.objects (bucket_id, name) values ('documents', $1)", [
+            `${aliceOrg}/maintenance/${mine}/sneaky.jpg`,
+          ]),
+        ),
+      ).rejects.toThrow(/row-level security/);
+      const seen = (user: string) =>
+        t.asUser(
+          user,
+          async () =>
+            (
+              await db.query<{ name: string }>("select name from storage.objects where name = $1", [
+                path,
+              ])
+            ).rows.length,
+        );
+      expect(await seen(TINA)).toBe(1);
+      expect(await seen(TOM)).toBe(0);
+      expect(await seen(ALICE)).toBe(1);
+      expect(await seen(BETH)).toBe(0);
+    });
+
+    it("messages only about their own tenancy, always as the tenant, and never edits them", async () => {
+      await t.asUser(
+        TINA,
+        () =>
+          db.query(
+            "insert into public.messages (org_id, tenancy_id, sender, body) values ($1, $2, 'staff', '  Thanks!  ')",
+            [aliceOrg, tina.tenancy],
+          ),
+        true,
+      );
+      const thread = await t.asUser(
+        TINA,
+        async () =>
+          (
+            await db.query<{
+              sender: string;
+              body: string;
+              author_user_id: string | null;
+              tenancy_id: string;
+            }>(
+              "select sender, body, author_user_id, tenancy_id from public.messages order by created_at",
+            )
+          ).rows,
+      );
+      expect(thread.every((message) => message.tenancy_id === tina.tenancy)).toBe(true);
+      expect(thread.at(-1)).toEqual({
+        sender: "tenant",
+        body: "Thanks!",
+        author_user_id: TINA,
+        tenancy_id: tina.tenancy,
+      });
+      expect(thread[0]).toMatchObject({ sender: "staff", body: "Welcome!" });
+
+      await expect(
+        t.asUser(TINA, () =>
+          db.query(
+            "insert into public.messages (org_id, tenancy_id, sender, body) values ($1, $2, 'tenant', 'Hi Tom')",
+            [aliceOrg, tom.tenancy],
+          ),
+        ),
+      ).rejects.toThrow(/row-level security/);
+      await expect(
+        t.asUser(TINA, () => db.query("update public.messages set body = 'edited'")),
+      ).rejects.toThrow(/permission denied/);
+      await expect(
+        t.asUser(ALICE, () => db.query("update public.messages set body = 'edited'")),
+      ).rejects.toThrow(/permission denied/);
+    });
+
+    it("sees and opens only documents served to them", async () => {
+      expect(await visible(TINA, "select id from public.documents")).toEqual([servedDoc]);
+      expect(await visible(TOM, "select id from public.documents")).toEqual([]);
+      const files = (user: string) =>
+        t.asUser(user, async () =>
+          (
+            await db.query<{ name: string }>(
+              "select name from storage.objects where name like '%gas.pdf'",
+            )
+          ).rows.map((row) => row.name),
+        );
+      expect(await files(TINA)).toEqual([`${aliceOrg}/properties/x/served-gas.pdf`]);
+      expect(await files(TOM)).toEqual([]);
+      expect(unservedDoc).toBeDefined();
+    });
+
+    it("gives a tenant of another organisation nothing of this one's", async () => {
+      for (const table of [
+        "tenancies",
+        "rent_charges",
+        "messages",
+        "maintenance_requests",
+        "documents",
+      ]) {
+        const rows = await t.asUser(
+          BETH,
+          async () =>
+            (await db.query<{ org_id: string }>(`select org_id from public.${table}`)).rows,
+        );
+        expect(rows.every((row) => row.org_id === bobOrg)).toBe(true);
+      }
+    });
+
+    it("gives signed-out visitors nothing", async () => {
+      for (const table of [
+        "rent_charges",
+        "rent_payments",
+        "messages",
+        "maintenance_requests",
+        "document_services",
+      ]) {
+        await expect(t.asAnon(() => db.query(`select * from public.${table}`))).rejects.toThrow(
+          /permission denied/,
+        );
+      }
+      await expect(t.asAnon(() => db.query("select public.tenant_home()"))).rejects.toThrow(
+        /permission denied/,
+      );
+    });
+  });
+
+  describe("rent schedule", () => {
+    /** An ended tenancy with fixed dates, so the charges don't depend on today. */
+    async function schedule(
+      start: string,
+      end: string,
+      frequency: string,
+      dueDay: number,
+      rent: number,
+    ) {
+      return t.asUser(ALICE, async () => {
+        const room = (
+          await db.query<{ id: string }>(
+            "insert into public.rooms (org_id, property_id, name) values ($1, $2, 'Schedule room') returning id",
+            [aliceOrg, aliceIds.properties],
+          )
+        ).rows[0]!.id;
+        const tenancy = (
+          await db.query<{ id: string }>(
+            "insert into public.tenancies (org_id, room_id, start_date, end_date, end_reason, status, rent_pence, rent_frequency, rent_due_day) values ($1, $2, $3, $4, 'tenant_notice', 'ended', $5, $6, $7) returning id",
+            [aliceOrg, room, start, end, rent, frequency, dueDay],
+          )
+        ).rows[0]!.id;
+        const first = (
+          await db.query<{ n: number }>("select public.sync_rent_charges($1) as n", [tenancy])
+        ).rows[0]!.n;
+        const again = (
+          await db.query<{ n: number }>("select public.sync_rent_charges($1) as n", [tenancy])
+        ).rows[0]!.n;
+        const { rows } = await db.query<{ period: string; amount: number }>(
+          "select to_char(period_start, 'DD/MM') || '-' || to_char(period_end, 'DD/MM') as period, amount_pence as amount from public.rent_charges where tenancy_id = $1 order by period_start",
+          [tenancy],
+        );
+        return { first, again, rows };
+      });
+    }
+    const perDay = (rent: number, days: number) => Math.floor((rent * 12 * days) / 365);
+
+    it("charges monthly rent on the due day, by the day for part months, once each", async () => {
+      const result = await schedule("2026-01-15", "2026-04-10", "monthly", 1, 60000);
+      expect(result.rows).toEqual([
+        { period: "15/01-31/01", amount: perDay(60000, 17) },
+        { period: "01/02-28/02", amount: 60000 },
+        { period: "01/03-31/03", amount: 60000 },
+        { period: "01/04-10/04", amount: perDay(60000, 10) },
+      ]);
+      expect(result).toMatchObject({ first: 4, again: 0 });
+    });
+
+    it("keeps the due day at the end of shorter months", async () => {
+      const result = await schedule("2026-01-31", "2026-03-15", "monthly", 31, 60000);
+      expect(result.rows).toEqual([
+        { period: "31/01-27/02", amount: 60000 },
+        { period: "28/02-15/03", amount: perDay(60000, 16) },
+      ]);
+    });
+
+    it("charges weekly rent on the due weekday, by the day for part weeks", async () => {
+      // Wednesday 07/01/2026 to Wednesday 28/01/2026, due on Mondays.
+      const result = await schedule("2026-01-07", "2026-01-28", "weekly", 1, 15000);
+      expect(result.rows).toEqual([
+        { period: "07/01-11/01", amount: Math.floor((15000 * 5) / 7) },
+        { period: "12/01-18/01", amount: 15000 },
+        { period: "19/01-25/01", amount: 15000 },
+        { period: "26/01-28/01", amount: Math.floor((15000 * 3) / 7) },
+      ]);
+    });
+
+    it("never charges upcoming tenancies, or a voided period twice", async () => {
+      await t.asUser(ALICE, async () => {
+        const charge = (
+          await db.query<{ id: string }>(
+            "select id from public.rent_charges where tenancy_id = $1 and source = 'schedule' order by period_start limit 1",
+            [tina.tenancy],
+          )
+        ).rows[0]!.id;
+        await db.query(
+          "update public.rent_charges set status = 'voided', void_reason = 'Agreed rent-free week', voided_at = now() where id = $1",
+          [charge],
+        );
+        const added = (
+          await db.query<{ n: number }>("select public.sync_rent_charges($1) as n", [tina.tenancy])
+        ).rows[0]!.n;
+        expect(added).toBe(0);
+      });
+    });
   });
 });
 

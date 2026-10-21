@@ -1,8 +1,8 @@
 /** Pages for signed-out users. Signed-in users are sent to the dashboard. */
 export const AUTH_ROUTES = ["/log-in", "/sign-up", "/magic-link", "/forgot-password"] as const;
 
-/** Routes anyone can reach, signed in or not (email link handlers). */
-export const OPEN_ROUTE_PREFIXES = ["/auth/"] as const;
+/** Routes anyone can reach, signed in or not: email link handlers and the applicant portal. */
+export const OPEN_ROUTE_PREFIXES = ["/auth/", "/apply/"] as const;
 
 export const HOME_ROUTE = "/dashboard";
 export const LOG_IN_ROUTE = "/log-in";

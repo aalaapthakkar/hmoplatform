@@ -27,7 +27,7 @@ export const PROPERTY_SECTIONS: Section[] = [
   { slug: "activity", label: "Activity", icon: Activity },
   { slug: "compliance", label: "Compliance", icon: ShieldCheck, comingSoon: true },
   { slug: "maintenance", label: "Maintenance", icon: Wrench },
-  { slug: "rent", label: "Rent", icon: PoundSterling, comingSoon: true },
+  { slug: "rent", label: "Rent", icon: PoundSterling },
 ];
 
 /**

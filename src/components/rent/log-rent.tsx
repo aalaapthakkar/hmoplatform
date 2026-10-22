@@ -47,14 +47,22 @@ export function LogRentButton({
   label = "Log rent",
   className,
   variant = "default",
+  ariaLabel,
 }: {
   tenancyId?: string;
   label?: string;
+  /** For buttons in a list, such as "Log rent for Priya Shah". */
+  ariaLabel?: string;
   className?: string;
   variant?: "default" | "outline";
 }) {
   return (
-    <Button variant={variant} className={className} onClick={() => openLogRent(tenancyId)}>
+    <Button
+      variant={variant}
+      className={className}
+      aria-label={ariaLabel}
+      onClick={() => openLogRent(tenancyId)}
+    >
       <PoundSterling aria-hidden />
       {label}
     </Button>

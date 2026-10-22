@@ -192,3 +192,76 @@ describe("describeActivity", () => {
     expect(describeActivity(row({ actor_name: null, after: room }), names).who).toBe("The system");
   });
 });
+
+describe("compliance activity", () => {
+  const withTypes: ActivityNames = {
+    ...names,
+    serviceTypes: new Map([["gas", "Gas safety certificate"]]),
+  };
+
+  it("describes recording a check, with the new dates", () => {
+    const entry = describeActivity(
+      row({
+        table_name: "property_services",
+        before: {
+          service_type_id: "gas",
+          last_done_on: "2025-11-01",
+          expires_on: "2026-11-01",
+          not_required: false,
+        },
+        after: {
+          service_type_id: "gas",
+          last_done_on: "2026-10-20",
+          expires_on: "2027-10-20",
+          not_required: false,
+        },
+      }),
+      withTypes,
+    );
+    expect(entry).toMatchObject({
+      subject: "Gas safety certificate",
+      summary: "Check recorded",
+      changes: [
+        { label: "Last done", from: "01/11/2025", to: "20/10/2026" },
+        { label: "Expires", from: "01/11/2026", to: "20/10/2027" },
+      ],
+    });
+  });
+
+  it("describes marking something not needed, and needed again", () => {
+    const notNeeded = describeActivity(
+      row({
+        table_name: "property_services",
+        action: "insert",
+        after: { service_type_id: "gas", not_required: true, not_required_reason: "All-electric" },
+      }),
+      withTypes,
+    );
+    expect(notNeeded.summary).toBe("Marked not needed here");
+    const again = describeActivity(
+      row({
+        table_name: "property_services",
+        before: { service_type_id: "gas", not_required: true, not_required_reason: "All-electric" },
+        after: { service_type_id: "gas", not_required: false, not_required_reason: null },
+      }),
+      withTypes,
+    );
+    expect(again).toMatchObject({
+      summary: "Needed again",
+      changes: [{ label: "Why not needed", from: "All-electric", to: null }],
+    });
+  });
+
+  it("describes serving a certificate", () => {
+    expect(
+      describeActivity(
+        row({
+          table_name: "certificate_services",
+          action: "insert",
+          after: { subject: "Your gas safety certificate" },
+        }),
+        withTypes,
+      ),
+    ).toMatchObject({ subject: "Your gas safety certificate", summary: "Served to tenants" });
+  });
+});

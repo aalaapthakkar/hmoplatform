@@ -44,10 +44,11 @@ async function Activity({
   }
 
   const supabase = await createClient();
-  const [activity, rooms, owners] = await Promise.all([
+  const [activity, rooms, owners, serviceTypes] = await Promise.all([
     supabase.rpc("property_activity", { p_property_id: propertyId, p_limit: LIMIT }),
     supabase.from("rooms").select("id, name, tenancies (id)").eq("property_id", propertyId),
     supabase.from("owners").select("id, name").eq("org_id", membership.orgId),
+    supabase.from("service_types").select("id, name").eq("org_id", membership.orgId),
   ]);
   if (activity.error || rooms.error || owners.error) {
     throw new Error("Could not load the activity", {
@@ -58,6 +59,7 @@ async function Activity({
   const names: ActivityNames = {
     rooms: new Map(rooms.data.map((room) => [room.id, room.name])),
     owners: new Map(owners.data.map((owner) => [owner.id, owner.name])),
+    serviceTypes: new Map((serviceTypes.data ?? []).map((type) => [type.id, type.name])),
     tenancyRooms: new Map(
       rooms.data.flatMap((room) => room.tenancies.map((tenancy) => [tenancy.id, room.id] as const)),
     ),

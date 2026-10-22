@@ -175,18 +175,22 @@ export async function recordDocument(propertyId: string, input: unknown): Promis
     };
   }
 
-  const { error } = await supabase.from("documents").insert({
-    org_id: membership.orgId,
-    property_id: propertyId,
-    document_type: documentType,
-    file_path: path,
-    file_name: fileName,
-    expiry_date: expiryDate,
-    uploaded_by: user.id,
-  });
+  const { data, error } = await supabase
+    .from("documents")
+    .insert({
+      org_id: membership.orgId,
+      property_id: propertyId,
+      document_type: documentType,
+      file_path: path,
+      file_name: fileName,
+      expiry_date: expiryDate,
+      uploaded_by: user.id,
+    })
+    .select("id")
+    .single();
   if (error) return error.code === "23503" ? PROPERTY_NOT_FOUND : TRY_AGAIN;
 
-  return { status: "success", message: `${fileName} uploaded.` };
+  return { status: "success", message: `${fileName} uploaded.`, id: data.id };
 }
 
 /** Hides a document from the list. The file and its record are kept. */

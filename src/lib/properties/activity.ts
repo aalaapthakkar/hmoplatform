@@ -12,6 +12,8 @@ export type ActivityNames = {
   owners: Map<string, string>;
   /** Tenancy id to room id. */
   tenancyRooms: Map<string, string>;
+  /** Compliance service type id to its name. */
+  serviceTypes?: Map<string, string>;
 };
 
 export type ActivityChange = { label: string; from: string | null; to: string | null };
@@ -29,9 +31,25 @@ export type ActivityEntry = {
 
 type Values = Record<string, Json | undefined>;
 
-const IGNORED = new Set(["id", "org_id", "created_at", "updated_at", "uploaded_by"]);
+const IGNORED = new Set([
+  "id",
+  "org_id",
+  "created_at",
+  "updated_at",
+  "uploaded_by",
+  "updated_by",
+  "property_id",
+  "service_type_id",
+  "document_id",
+  "details",
+]);
 
 const FIELD_LABELS: Record<string, string> = {
+  last_done_on: "Last done",
+  expires_on: "Expires",
+  not_required: "Not needed here",
+  not_required_reason: "Why not needed",
+  notes: "Notes",
   name: "Name",
   rent_pence: "Rent",
   rent_frequency: "Rent frequency",
@@ -96,7 +114,9 @@ const VALUE_LABELS: Record<string, Record<string, string>> = {
 function asText(field: string, value: Json | undefined, names: ActivityNames): string | null {
   if (value === null || value === undefined || value === "") return null;
   if (field.endsWith("_pence") && typeof value === "number") return formatPence(value);
-  if (field.endsWith("_date") && typeof value === "string") return formatUkDate(value);
+  if ((field.endsWith("_date") || field.endsWith("_on")) && typeof value === "string") {
+    return formatUkDate(value);
+  }
   if (field === "size_sqm") {
     const size = String(value);
     return `${size.includes(".") ? size.replace(/\.?0+$/, "") : size} m²`;
@@ -146,6 +166,31 @@ export function describeActivity(row: ActivityRow, names: ActivityNames): Activi
   const onlyStatus = statusChanged && changes.length === 1;
 
   switch (row.table_name) {
+    case "property_services": {
+      const typeId = text(current.service_type_id);
+      const subject = (typeId && names.serviceTypes?.get(typeId)) ?? "Compliance";
+      const notNeeded = current.not_required === true;
+      if (row.action === "insert") {
+        return {
+          ...base,
+          subject,
+          summary: notNeeded ? "Marked not needed here" : "Check recorded",
+        };
+      }
+      if (before.not_required !== after.not_required) {
+        return {
+          ...base,
+          subject,
+          summary: notNeeded ? "Marked not needed here" : "Needed again",
+          changes: changes.filter((change) => change.label !== "Not needed here"),
+        };
+      }
+      return { ...base, subject, summary: "Check recorded", changes };
+    }
+    case "certificate_services": {
+      const subject = text(current.subject) ?? "Certificate";
+      return { ...base, subject, summary: "Served to tenants" };
+    }
     case "properties": {
       if (row.action === "insert")
         return { ...base, subject: "Property", summary: "Property added" };

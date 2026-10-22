@@ -1,4 +1,5 @@
 import { getCurrentUser, requireMembership } from "@/lib/auth/session";
+import { LogRent } from "@/components/rent/log-rent";
 import { UserMenu } from "./user-menu";
 
 /** Org name and user menu. Reads the session, so render it inside <Suspense>. */
@@ -8,6 +9,7 @@ export async function TopBarDetails() {
   return (
     <>
       <p className="min-w-0 flex-1 truncate font-semibold">{membership.orgName}</p>
+      <LogRent />
       <UserMenu email={user.email} />
     </>
   );

@@ -310,3 +310,30 @@ export function buildLedger(
     notYetLatePence,
   };
 }
+
+/**
+ * How a payment was allocated, in one sentence: "£550.00 logged: clears Rent
+ * 01/10/2026 to 31/10/2026." Partly paid charges say what's still to pay, and
+ * anything over is credit.
+ */
+export function describePayment(ledger: Ledger, paymentId: string): string {
+  const line = ledger.lines.find((entry) => entry.id === paymentId);
+  if (!line) return "Payment logged.";
+  const left = new Map(ledger.charges.map((charge) => [charge.id, charge.leftPence]));
+  const cleared = line.paidTowards.filter((towards) => left.get(towards.chargeId) === 0);
+  const partly = line.paidTowards.filter((towards) => (left.get(towards.chargeId) ?? 0) > 0);
+
+  const parts: string[] = [];
+  if (cleared.length > 0) {
+    parts.push(`clears ${cleared.map((towards) => towards.description).join(" and ")}`);
+  }
+  for (const towards of partly) {
+    parts.push(
+      `${formatPence(towards.pence)} towards ${towards.description} (${formatPence(left.get(towards.chargeId)!)} still to pay)`,
+    );
+  }
+  if (line.creditPence > 0) parts.push(`${formatPence(line.creditPence)} kept as credit`);
+  return parts.length > 0
+    ? `${formatPence(line.amountPence)} logged: ${parts.join("; ")}.`
+    : `${formatPence(line.amountPence)} logged.`;
+}

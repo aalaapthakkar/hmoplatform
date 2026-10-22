@@ -6,17 +6,9 @@ import { toast } from "sonner";
 import {
   addCharge,
   type ChargeFormValues,
-  type PaymentFormValues,
-  recordPayment,
   reverseEntry,
 } from "@/app/(app)/tenancies/[tenancyId]/rent-actions";
-import {
-  Field,
-  FormIdPrefix,
-  PoundsInput,
-  selectClass,
-  useFormValues,
-} from "@/components/forms/fields";
+import { Field, FormIdPrefix, PoundsInput, useFormValues } from "@/components/forms/fields";
 import { StatementList } from "@/components/rent/statement-list";
 import {
   AlertDialog,
@@ -33,7 +25,8 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { formatPence } from "@/lib/format";
-import { PAYMENT_METHOD_LABELS, type StatementLine } from "@/lib/rent/ledger";
+import { LogRentButton } from "@/components/rent/log-rent";
+import type { StatementLine } from "@/lib/rent/ledger";
 
 type Run = (action: () => Promise<{ status: string; message: string }>, after?: () => void) => void;
 
@@ -70,7 +63,18 @@ export function StaffStatementTools({
   return (
     <>
       <div className="grid gap-4 md:grid-cols-2">
-        <PaymentForm tenancyId={tenancyId} today={today} run={run} pending={pending} />
+        <Card>
+          <CardContent className="flex flex-col gap-3">
+            <h2 className="font-semibold">Log a payment</h2>
+            <p className="text-sm text-muted-foreground">
+              Record money received. It pays off the oldest charges first, and anything over is kept
+              as credit.
+            </p>
+            <div>
+              <LogRentButton tenancyId={tenancyId} label="Log rent for this tenancy" />
+            </div>
+          </CardContent>
+        </Card>
         <ChargeForm tenancyId={tenancyId} today={today} run={run} pending={pending} />
       </div>
 
@@ -142,78 +146,6 @@ export function StaffStatementTools({
         </AlertDialogContent>
       </AlertDialog>
     </>
-  );
-}
-
-function PaymentForm({
-  tenancyId,
-  today,
-  run,
-  pending,
-}: {
-  tenancyId: string;
-  today: string;
-  run: Run;
-  pending: boolean;
-}) {
-  const initial: PaymentFormValues = {
-    paidOn: today,
-    amount: "",
-    method: "bank_transfer",
-    reference: "",
-  };
-  const form = useFormValues(initial);
-
-  function handleSubmit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    run(
-      () => recordPayment(tenancyId, form.values),
-      () => form.setValues(initial),
-    );
-  }
-
-  return (
-    <Card>
-      <CardContent>
-        <FormIdPrefix value={form.prefix}>
-          <form
-            onSubmit={handleSubmit}
-            noValidate
-            className="flex flex-col gap-3"
-            aria-label="Record a payment"
-          >
-            <h2 className="font-semibold">Record a payment</h2>
-            <div className="grid grid-cols-2 gap-3">
-              <Field name="paidOn" label="Paid on">
-                <Input {...form.field("paidOn")} type="date" max={today} />
-              </Field>
-              <Field name="amount" label="Amount">
-                <PoundsInput {...form.field("amount")} />
-              </Field>
-            </div>
-            <div className="grid grid-cols-2 gap-3">
-              <Field name="method" label="How">
-                <select {...form.field("method")} className={selectClass}>
-                  {Object.entries(PAYMENT_METHOD_LABELS).map(([value, label]) => (
-                    <option key={value} value={value}>
-                      {label}
-                    </option>
-                  ))}
-                </select>
-              </Field>
-              <Field name="reference" label="Reference (optional)">
-                <Input {...form.field("reference")} autoComplete="off" />
-              </Field>
-            </div>
-            <div>
-              <Button type="submit" disabled={pending}>
-                Record payment
-              </Button>
-            </div>
-          </form>
-        </FormIdPrefix>
-      </CardContent>
-    </Card>
   );
 }
 

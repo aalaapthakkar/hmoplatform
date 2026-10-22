@@ -4,7 +4,6 @@ import { z } from "zod";
 import type { ActionResult } from "@/app/(app)/properties/[propertyId]/actions";
 import { getCurrentUser, requireMembership } from "@/lib/auth/session";
 import { getPublicEnv } from "@/lib/env";
-import { formatPence, todayInLondon } from "@/lib/format";
 import { createPortalToken } from "@/lib/onboarding/portal-token";
 import { createClient } from "@/lib/supabase/server";
 import { dateField } from "@/lib/validation/dates";
@@ -12,53 +11,6 @@ import { poundsField } from "@/lib/validation/property";
 
 const id = z.uuid();
 const CHECK: ActionResult = { status: "error", message: "Check the details and try again." };
-
-export type PaymentFormValues = {
-  paidOn: string;
-  amount: string;
-  method: string;
-  reference: string;
-};
-
-const paymentSchema = z.object({
-  paidOn: dateField("date it was paid").refine(
-    (date) => date <= todayInLondon(),
-    "That date is in the future",
-  ),
-  amount: poundsField("amount"),
-  method: z.enum(
-    ["bank_transfer", "standing_order", "card", "cash", "other"],
-    "Choose how it was paid",
-  ),
-  reference: z
-    .string()
-    .trim()
-    .max(100, "Use 100 characters or fewer")
-    .transform((value) => value || null),
-});
-
-/** Records money received from the tenant. */
-export async function recordPayment(tenancyId: string, input: unknown): Promise<ActionResult> {
-  const parsed = paymentSchema.safeParse(input);
-  if (!parsed.success)
-    return { status: "error", message: parsed.error.issues[0]?.message ?? CHECK.message };
-  if (!id.safeParse(tenancyId).success) return CHECK;
-
-  const [membership, user] = await Promise.all([requireMembership(), getCurrentUser()]);
-  const supabase = await createClient();
-  const { error } = await supabase.from("rent_payments").insert({
-    org_id: membership.orgId,
-    tenancy_id: tenancyId,
-    paid_on: parsed.data.paidOn,
-    amount_pence: parsed.data.amount,
-    method: parsed.data.method,
-    reference: parsed.data.reference,
-    recorded_by: user.id,
-  });
-  if (error)
-    return { status: "error", message: "We couldn't record that payment. Please try again." };
-  return { status: "success", message: `Payment of ${formatPence(parsed.data.amount)} recorded.` };
-}
 
 export type ChargeFormValues = { dueDate: string; amount: string; description: string };
 

@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { balanceLabel, buildLedger, type LedgerCharge, type LedgerPayment } from "./ledger";
+import {
+  balanceLabel,
+  buildLedger,
+  describePayment,
+  type LedgerCharge,
+  type LedgerPayment,
+} from "./ledger";
 
 const RENT = 60000;
 let clock = 0;
@@ -355,5 +361,33 @@ describe("balanceLabel", () => {
     expect(balanceLabel(12345)).toBe("£123.45 owed");
     expect(balanceLabel(-1500)).toBe("£15.00 in credit");
     expect(balanceLabel(0)).toBe("Up to date");
+  });
+});
+
+describe("describePayment", () => {
+  const sep = () => charge("sep", "2026-09-01", RENT, { description: "Rent September" });
+  const oct = () => charge("oct", "2026-10-01", RENT, { description: "Rent October" });
+
+  it("says which charges a payment cleared", () => {
+    const ledger = buildLedger([sep(), oct()], [payment("p1", "2026-10-02", 120000)], "2026-10-02");
+    expect(describePayment(ledger, "p1")).toBe(
+      "£1,200.00 logged: clears Rent September and Rent October.",
+    );
+  });
+
+  it("says what's still to pay after a part payment", () => {
+    const ledger = buildLedger([sep(), oct()], [payment("p1", "2026-10-02", 90000)], "2026-10-02");
+    expect(describePayment(ledger, "p1")).toBe(
+      "£900.00 logged: clears Rent September; £300.00 towards Rent October (£300.00 still to pay).",
+    );
+  });
+
+  it("says when money is kept as credit", () => {
+    const ledger = buildLedger([oct()], [payment("p1", "2026-10-02", 65000)], "2026-10-02");
+    expect(describePayment(ledger, "p1")).toBe(
+      "£650.00 logged: clears Rent October; £50.00 kept as credit.",
+    );
+    const upFront = buildLedger([], [payment("p2", "2026-10-02", 10000)], "2026-10-02");
+    expect(describePayment(upFront, "p2")).toBe("£100.00 logged: £100.00 kept as credit.");
   });
 });

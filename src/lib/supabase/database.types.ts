@@ -53,6 +53,27 @@ type MaintenanceUrgency = "low" | "normal" | "urgent" | "emergency";
 type MaintenanceStatus = "reported" | "in_progress" | "done" | "closed";
 type MessageSender = "tenant" | "staff";
 type ServiceMethod = "portal" | "email" | "post" | "by_hand";
+type ComplianceCategory =
+  | "gas"
+  | "electrical"
+  | "energy"
+  | "fire"
+  | "licence"
+  | "health_and_safety"
+  | "insurance"
+  | "other";
+type CertificateChannel = "portal" | "email_and_portal";
+type EmailStatus = "sent" | "failed" | "no_email";
+/** Worked out by the compliance_items view. */
+type ComplianceStatus = "ok" | "due_soon" | "overdue" | "missing" | "not_needed";
+/** An extra detail a service type records, such as an HMO licence number. */
+export type ServiceField = {
+  key: string;
+  label: string;
+  kind: "text" | "number" | "date" | "long_text" | "choice";
+  options?: string[];
+};
+type ServiceDetails = Record<string, string | number | null>;
 type DocumentType =
   | "gas_safety"
   | "eicr"
@@ -109,6 +130,7 @@ export type Database = {
           user_id: string;
           role: MembershipRole;
           status: MembershipStatus;
+          compliance_emails: boolean;
           created_at: string;
           updated_at: string;
         };
@@ -118,6 +140,7 @@ export type Database = {
           user_id: string;
           role: MembershipRole;
           status?: MembershipStatus;
+          compliance_emails?: boolean;
           created_at?: string;
           updated_at?: string;
         };
@@ -1038,6 +1061,8 @@ export type Database = {
           urgency: MaintenanceUrgency;
           status: MaintenanceStatus;
           resolved_at: string | null;
+          property_service_id: string | null;
+          due_cycle: string | null;
           created_at: string;
           updated_at: string;
         };
@@ -1054,6 +1079,8 @@ export type Database = {
           urgency?: MaintenanceUrgency;
           status?: MaintenanceStatus;
           resolved_at?: string | null;
+          property_service_id?: string | null;
+          due_cycle?: string | null;
           created_at?: string;
           updated_at?: string;
         };
@@ -1134,8 +1161,175 @@ export type Database = {
         Update: Partial<Database["public"]["Tables"]["document_services"]["Insert"]>;
         Relationships: [];
       };
+      service_types: {
+        Row: {
+          id: string;
+          org_id: string;
+          name: string;
+          category: ComplianceCategory;
+          validity_months: number | null;
+          alert_window_days: number;
+          requires_document: boolean;
+          document_type: DocumentType;
+          auto_create_job: boolean;
+          expiry_label: string;
+          fields: ServiceField[];
+          status: RecordStatus;
+          system_key: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          org_id: string;
+          name: string;
+          category: ComplianceCategory;
+          validity_months?: number | null;
+          alert_window_days?: number;
+          requires_document?: boolean;
+          document_type?: DocumentType;
+          auto_create_job?: boolean;
+          expiry_label?: string;
+          fields?: ServiceField[];
+          status?: RecordStatus;
+          system_key?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: Partial<Database["public"]["Tables"]["service_types"]["Insert"]>;
+        Relationships: [];
+      };
+      property_services: {
+        Row: {
+          id: string;
+          org_id: string;
+          property_id: string;
+          service_type_id: string;
+          last_done_on: string | null;
+          expires_on: string | null;
+          document_id: string | null;
+          notes: string | null;
+          details: ServiceDetails;
+          not_required: boolean;
+          not_required_reason: string | null;
+          updated_by: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          org_id: string;
+          property_id: string;
+          service_type_id: string;
+          last_done_on?: string | null;
+          expires_on?: string | null;
+          document_id?: string | null;
+          notes?: string | null;
+          details?: ServiceDetails;
+          not_required?: boolean;
+          not_required_reason?: string | null;
+          updated_by?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: Partial<Database["public"]["Tables"]["property_services"]["Insert"]>;
+        Relationships: [];
+      };
+      certificate_services: {
+        Row: {
+          id: string;
+          org_id: string;
+          property_id: string;
+          document_id: string;
+          property_service_id: string | null;
+          subject: string;
+          message: string;
+          sent_by: string | null;
+          sent_at: string;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          org_id: string;
+          property_id: string;
+          document_id: string;
+          property_service_id?: string | null;
+          subject: string;
+          message: string;
+          sent_by?: string | null;
+          sent_at?: string;
+          created_at?: string;
+          updated_at?: string;
+        };
+        /** Never changed: a record of what was sent. */
+        Update: { [_ in never]: never };
+        Relationships: [];
+      };
+      certificate_service_recipients: {
+        Row: {
+          id: string;
+          org_id: string;
+          certificate_service_id: string;
+          tenant_id: string;
+          tenancy_id: string;
+          name: string;
+          email: string | null;
+          channel: CertificateChannel;
+          email_status: EmailStatus;
+          provider_message_id: string | null;
+          error: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          org_id: string;
+          certificate_service_id: string;
+          tenant_id: string;
+          tenancy_id: string;
+          name: string;
+          email?: string | null;
+          channel: CertificateChannel;
+          email_status: EmailStatus;
+          provider_message_id?: string | null;
+          error?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        /** Never changed: a record of what was sent. */
+        Update: { [_ in never]: never };
+        Relationships: [];
+      };
     };
-    Views: { [_ in never]: never };
+    Views: {
+      compliance_items: {
+        Row: {
+          org_id: string;
+          property_id: string;
+          service_type_id: string;
+          property_service_id: string | null;
+          service_name: string;
+          category: ComplianceCategory;
+          system_key: string | null;
+          validity_months: number | null;
+          alert_window_days: number;
+          requires_document: boolean;
+          auto_create_job: boolean;
+          expiry_label: string;
+          last_done_on: string | null;
+          expires_on: string | null;
+          document_id: string | null;
+          notes: string | null;
+          details: ServiceDetails;
+          not_required: boolean;
+          not_required_reason: string | null;
+          days_left: number | null;
+          status: ComplianceStatus;
+        };
+        Relationships: [];
+      };
+    };
     Functions: {
       create_organisation: {
         Args: { org_name: string };
@@ -1297,6 +1491,35 @@ export type Database = {
       claim_tenant_invite: { Args: { p_token: string }; Returns: undefined };
       tenant_home: { Args: Record<string, never>; Returns: Json };
       sync_rent_charges: { Args: { p_tenancy_id: string }; Returns: number };
+      set_my_compliance_emails: { Args: { p_on: boolean }; Returns: undefined };
+      compliance_reminder_batch: {
+        Args: { p_secret: string; p_as_of?: string };
+        Returns: {
+          user_id: string;
+          email: string;
+          full_name: string | null;
+          org_id: string;
+          org_name: string;
+          property_service_id: string;
+          property_id: string;
+          property_label: string;
+          service_name: string;
+          expires_on: string;
+          kind: "due_soon" | "overdue";
+        }[];
+      };
+      record_compliance_reminders: {
+        Args: {
+          p_secret: string;
+          p_sent: {
+            property_service_id: string;
+            expires_on: string;
+            kind: "due_soon" | "overdue";
+            user_id: string;
+          }[];
+        };
+        Returns: number;
+      };
       reverse_ledger_entry: {
         Args: { p_kind: "charge" | "payment"; p_entry_id: string; p_reason: string };
         Returns: string;
@@ -1351,6 +1574,9 @@ export type Database = {
       message_sender: MessageSender;
       service_method: ServiceMethod;
       document_type: DocumentType;
+      compliance_category: ComplianceCategory;
+      certificate_channel: CertificateChannel;
+      email_status: EmailStatus;
     };
     CompositeTypes: { [_ in never]: never };
   };

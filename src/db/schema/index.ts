@@ -16,3 +16,4 @@ export * from "./right-to-rent";
 export * from "./reminders";
 export * from "./esign";
 export * from "./portal";
+export * from "./compliance";

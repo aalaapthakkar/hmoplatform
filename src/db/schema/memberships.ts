@@ -1,4 +1,4 @@
-import { index, pgEnum, pgTable, unique, uuid } from "drizzle-orm/pg-core";
+import { boolean, index, pgEnum, pgTable, unique, uuid } from "drizzle-orm/pg-core";
 import { timestamps } from "./_shared";
 import { organisations } from "./organisations";
 import { users } from "./users";
@@ -19,6 +19,8 @@ export const memberships = pgTable(
       .references(() => users.id, { onDelete: "restrict" }),
     role: membershipRole("role").notNull(),
     status: membershipStatus("status").notNull().default("active"),
+    /** Gets the daily compliance reminder email. On for admins when they join. */
+    complianceEmails: boolean("compliance_emails").notNull().default(false),
     ...timestamps,
   },
   (table) => [

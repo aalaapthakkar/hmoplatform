@@ -15,6 +15,7 @@ import {
 } from "drizzle-orm/pg-core";
 import { orgId } from "./_org";
 import { timestamps } from "./_shared";
+import { propertyServices } from "./compliance";
 import { documents } from "./documents";
 import { properties } from "./properties";
 import { rooms } from "./rooms";
@@ -192,10 +193,15 @@ export const maintenanceRequests = pgTable(
     urgency: maintenanceUrgency("urgency").notNull().default("normal"),
     status: maintenanceStatus("status").notNull().default("reported"),
     resolvedAt: timestamp("resolved_at", { withTimezone: true }),
+    /** Set on jobs opened by the daily compliance run: the item, and the expiry it's for. */
+    propertyServiceId: uuid("property_service_id"),
+    dueCycle: date("due_cycle"),
     ...timestamps,
   },
   (table) => [
     unique("maintenance_requests_id_org_id_key").on(table.id, table.orgId),
+    // One job per compliance item per expiry date.
+    uniqueIndex("maintenance_requests_one_per_cycle").on(table.propertyServiceId, table.dueCycle),
     index("maintenance_requests_org_id_idx").on(table.orgId),
     index("maintenance_requests_property_id_idx").on(table.propertyId),
     index("maintenance_requests_tenancy_id_idx").on(table.tenancyId),
@@ -213,6 +219,11 @@ export const maintenanceRequests = pgTable(
       name: "maintenance_requests_tenancy_fk",
       columns: [table.tenancyId, table.orgId],
       foreignColumns: [tenancies.id, tenancies.orgId],
+    }).onDelete("restrict"),
+    foreignKey({
+      name: "maintenance_requests_property_service_fk",
+      columns: [table.propertyServiceId, table.orgId],
+      foreignColumns: [propertyServices.id, propertyServices.orgId],
     }).onDelete("restrict"),
     check("maintenance_requests_title_length", sql`char_length(title) between 1 and 120`),
     check(

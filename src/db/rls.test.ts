@@ -48,12 +48,24 @@ const BUSINESS_TABLES = [
   "maintenance_requests",
   "maintenance_photos",
   "document_services",
+  "service_types",
+  "property_services",
+  "certificate_services",
+  "certificate_service_recipients",
 ] as const;
 
 type BusinessTable = (typeof BUSINESS_TABLES)[number];
 
 /** Ledgers: rows are added, never edited. Mistakes are put right by reversals. */
-const APPEND_ONLY = new Set<BusinessTable>(["rent_charges", "rent_payments"]);
+const APPEND_ONLY = new Set<BusinessTable>([
+  "rent_charges",
+  "rent_payments",
+  "certificate_services",
+  "certificate_service_recipients",
+]);
+
+/** Everyone in the organisation sees these, but only admins change them. */
+const ADMIN_EDITS = new Set<BusinessTable>(["service_types"]);
 type RecordIds = Record<BusinessTable, string>;
 
 /**
@@ -161,6 +173,22 @@ const INSERTS: Record<
     sql: "insert into public.document_services (org_id, document_id, tenancy_id) values ($1, $2, $3) returning id",
     params: [orgId, parents.documents, parents.tenancies],
   }),
+  service_types: (orgId) => ({
+    sql: "insert into public.service_types (org_id, name, category) values ($1, 'Test check', 'other') returning id",
+    params: [orgId],
+  }),
+  property_services: (orgId, parents) => ({
+    sql: "insert into public.property_services (org_id, property_id, service_type_id, expires_on) values ($1, $2, $3, '2030-01-01') returning id",
+    params: [orgId, parents.properties, parents.service_types],
+  }),
+  certificate_services: (orgId, parents) => ({
+    sql: "insert into public.certificate_services (org_id, property_id, document_id, subject, message) values ($1, $2, $3, 'Your gas safety certificate', 'Here it is.') returning id",
+    params: [orgId, parents.properties, parents.documents],
+  }),
+  certificate_service_recipients: (orgId, parents) => ({
+    sql: "insert into public.certificate_service_recipients (org_id, certificate_service_id, tenant_id, tenancy_id, name, channel, email_status) values ($1, $2, $3, $4, 'Test Tenant', 'portal', 'no_email') returning id",
+    params: [orgId, parents.certificate_services, parents.tenants, parents.tenancies],
+  }),
 };
 
 /** The business records each table's rows point at. */
@@ -189,6 +217,10 @@ const PARENTS: Record<BusinessTable, BusinessTable[]> = {
   maintenance_requests: ["properties"],
   maintenance_photos: ["maintenance_requests"],
   document_services: ["documents", "tenancies"],
+  service_types: [],
+  property_services: ["properties", "service_types"],
+  certificate_services: ["properties", "documents"],
+  certificate_service_recipients: ["certificate_services", "tenants", "tenancies"],
 };
 
 let t: TestDatabase;
@@ -529,7 +561,7 @@ describe.each(BUSINESS_TABLES)("%s: org isolation", (table) => {
         aliceIds[table],
       ]);
       if (APPEND_ONLY.has(table)) await expect(update).rejects.toThrow(/permission denied/);
-      else expect((await update).affectedRows).toBe(1);
+      else expect((await update).affectedRows).toBe(ADMIN_EDITS.has(table) ? 0 : 1);
     });
   });
 });

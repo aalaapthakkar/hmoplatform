@@ -36,3 +36,16 @@ test("the portal can be installed on a phone", async ({ request }) => {
   expect(await worker.text()).toContain("/offline.html");
   expect((await request.get("/offline.html")).ok()).toBe(true);
 });
+
+test("rent pages, exports and statements need a signed-in user", async ({ page }) => {
+  for (const path of [
+    "/rent",
+    "/rent/export",
+    "/tenancies/0f8fad5b-d9cb-469f-a165-70867728950e/statement",
+    "/tenancies/0f8fad5b-d9cb-469f-a165-70867728950e/statement/pdf",
+    "/portal/rent/statement.pdf",
+  ]) {
+    await page.goto(path);
+    await expect(page).toHaveURL(/\/log-in$/);
+  }
+});

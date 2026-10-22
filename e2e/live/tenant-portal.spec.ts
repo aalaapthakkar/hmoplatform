@@ -71,6 +71,12 @@ test("a tenant joins the portal on their phone and uses it", async ({ page, brow
   await tabs.getByRole("link", { name: "Rent" }).click();
   await expect(tenant.getByTestId("statement-balance")).toHaveText("£550.00 owed");
   await expect(tenant.getByTestId("statement-line")).toHaveCount(1);
+  // The same statement staff see: due today, so not overdue yet.
+  await expect(tenant.getByTestId("charge-status")).toHaveText("Due · £550.00 left");
+  await expect(tenant.getByTestId("statement-arrears")).toHaveText("£0.00");
+  const statementPdf = await tenant.request.get("/portal/rent/statement.pdf");
+  expect(statementPdf.headers()["content-type"]).toBe("application/pdf");
+  expect((await statementPdf.body()).subarray(0, 5).toString()).toBe("%PDF-");
 
   // A repair with a photo.
   await tabs.getByRole("link", { name: "Repairs" }).click();
@@ -113,7 +119,13 @@ test("a tenant joins the portal on their phone and uses it", async ({ page, brow
 
   // Tenants never reach the staff app.
   const tenancyId = new URL(roomUrl).searchParams.get("tenancy");
-  for (const path of ["/dashboard", "/properties", `/tenancies/${tenancyId}/statement`]) {
+  for (const path of [
+    "/dashboard",
+    "/properties",
+    "/rent",
+    `/tenancies/${tenancyId}/statement`,
+    `/tenancies/${tenancyId}/statement/pdf`,
+  ]) {
     await tenant.goto(path);
     await expect(tenant).toHaveURL(/\/portal$/);
   }

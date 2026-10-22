@@ -173,3 +173,31 @@ test("admins add their own compliance types, with extra details", async ({ page 
   await page.goto(`${propertyUrl}/compliance`);
   await expect(page.getByTestId("compliance-item").filter({ hasText: name })).toHaveCount(0);
 });
+
+test("each person chooses reminder emails, and sees what they cover", async ({ page }) => {
+  test.setTimeout(120_000);
+  const address = uniqueAddress("Reminder Row");
+  await addHouseShare(page, address, 1);
+  const propertyUrl = (await page.getByRole("link", { name: address }).getAttribute("href"))!;
+  await page.goto(`${propertyUrl}/compliance`);
+  const sheet = await openRecord(page, "smoke_alarms");
+  await sheet.getByLabel("Next test due").fill(londonDate(3));
+  await save(page, "Smoke and carbon monoxide alarm test");
+
+  await page.goto("/settings/notifications");
+  const due = page.getByRole("list", { name: "Due now" });
+  await expect(
+    due.getByRole("listitem").filter({ hasText: address }).filter({ hasText: "Smoke and carbon" }),
+  ).toBeVisible();
+
+  const toggle = page.getByLabel("Email me compliance reminders");
+  const wasOn = await toggle.isChecked();
+  await toggle.click();
+  await expect(
+    page.getByText(wasOn ? "Compliance reminders are off." : "You'll get compliance reminders."),
+  ).toBeVisible();
+  await expect(toggle).toBeChecked({ checked: !wasOn });
+  // Put it back as it was.
+  await toggle.click();
+  await expect(toggle).toBeChecked({ checked: wasOn });
+});

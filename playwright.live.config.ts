@@ -51,6 +51,7 @@ export default defineConfig({
     reuseExistingServer: false,
     // Auth emails must link back to this server, not the dev one.
     // The pretend e-sign provider, so tests never send real signature requests.
-    env: { NEXT_PUBLIC_SITE_URL: baseURL, ESIGN_PROVIDER: "fake" },
+    // Pretend providers: the live tests never send real emails or signing requests.
+    env: { NEXT_PUBLIC_SITE_URL: baseURL, ESIGN_PROVIDER: "fake", EMAIL_PROVIDER: "fake" },
   },
 });

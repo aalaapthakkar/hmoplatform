@@ -3,9 +3,16 @@ export const AUTH_ROUTES = ["/log-in", "/sign-up", "/magic-link", "/forgot-passw
 
 /**
  * Routes anyone can reach, signed in or not: email links, the applicant
- * portal, tenant portal invites and e-sign webhooks.
+ * portal, tenant portal invites, e-sign webhooks and scheduled jobs (which
+ * prove themselves with a secret).
  */
-export const OPEN_ROUTE_PREFIXES = ["/auth/", "/apply/", "/portal/join/", "/api/esign/"] as const;
+export const OPEN_ROUTE_PREFIXES = [
+  "/auth/",
+  "/apply/",
+  "/portal/join/",
+  "/api/esign/",
+  "/api/cron/",
+] as const;
 
 export const HOME_ROUTE = "/dashboard";
 export const LOG_IN_ROUTE = "/log-in";

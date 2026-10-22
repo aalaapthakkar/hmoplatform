@@ -27,6 +27,7 @@ export default defineConfig({
       NEXT_PUBLIC_SUPABASE_URL: "http://127.0.0.1:54321",
       NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: "e2e-dummy-key",
       NEXT_PUBLIC_SITE_URL: baseURL,
+      EMAIL_PROVIDER: "fake",
     },
   },
 });

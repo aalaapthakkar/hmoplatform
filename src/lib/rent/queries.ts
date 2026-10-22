@@ -1,9 +1,7 @@
 import "server-only";
 import { createClient } from "@/lib/supabase/server";
-import { buildStatement } from "./statement";
-
-const CHARGE_COLUMNS = "id, due_date, amount_pence, description, status, void_reason, kind";
-const PAYMENT_COLUMNS = "id, paid_on, amount_pence, method, reference, status, void_reason";
+import { todayInLondon } from "@/lib/format";
+import { buildLedger, CHARGE_COLUMNS, PAYMENT_COLUMNS } from "./ledger";
 
 /**
  * Brings the rent schedule up to date, then builds the statement. RLS decides
@@ -20,5 +18,5 @@ export async function getStatement(tenancyId: string) {
   ]);
   if (charges.error) throw charges.error;
   if (payments.error) throw payments.error;
-  return buildStatement(charges.data, payments.data);
+  return buildLedger(charges.data, payments.data, todayInLondon());
 }

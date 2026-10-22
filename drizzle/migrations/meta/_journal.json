@@ -155,6 +155,34 @@
       "when": 1792614715912,
       "tag": "0021_tenant_portal_functions",
       "breakpoints": true
+    },
+    {
+      "idx": 22,
+      "version": "7",
+      "when": 1792617782389,
+      "tag": "0022_ledger_reversals",
+      "breakpoints": true
+    },
+    {
+      "idx": 23,
+      "version": "7",
+      "when": 1792617789765,
+      "tag": "0023_ledger_drop_voids",
+      "breakpoints": true
+    },
+    {
+      "idx": 24,
+      "version": "7",
+      "when": 1792617824831,
+      "tag": "0024_rent_ledger_functions",
+      "breakpoints": true
+    },
+    {
+      "idx": 25,
+      "version": "7",
+      "when": 1792618063332,
+      "tag": "0025_ledger_period_index",
+      "breakpoints": true
     }
   ]
 }

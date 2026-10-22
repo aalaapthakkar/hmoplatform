@@ -51,6 +51,9 @@ const BUSINESS_TABLES = [
 ] as const;
 
 type BusinessTable = (typeof BUSINESS_TABLES)[number];
+
+/** Ledgers: rows are added, never edited. Mistakes are put right by reversals. */
+const APPEND_ONLY = new Set<BusinessTable>(["rent_charges", "rent_payments"]);
 type RecordIds = Record<BusinessTable, string>;
 
 /**
@@ -445,10 +448,11 @@ describe.each(BUSINESS_TABLES)("%s: org isolation", (table) => {
 
   it("does not let a member edit another organisation's rows", async () => {
     await t.asUser(ALICE, async () => {
-      const update = await db.query(`update public.${table} set updated_at = now() where id = $1`, [
+      const update = db.query(`update public.${table} set updated_at = now() where id = $1`, [
         bobIds[table],
       ]);
-      expect(update.affectedRows).toBe(0);
+      if (APPEND_ONLY.has(table)) await expect(update).rejects.toThrow(/permission denied/);
+      else expect((await update).affectedRows).toBe(0);
     });
     const { rows } = await db.query<{ changed: boolean }>(
       `select updated_at <> created_at as changed from public.${table} where id = $1`,
@@ -479,12 +483,14 @@ describe.each(BUSINESS_TABLES)("%s: org isolation", (table) => {
       t.asUser(ALICE, () =>
         db.query(`update public.${table} set org_id = $1 where id = $2`, [bobOrg, aliceIds[table]]),
       ),
-    ).rejects.toThrow(/another organisation|row-level security/);
+    ).rejects.toThrow(/another organisation|row-level security|permission denied/);
 
     // The trigger stops it even for the database owner.
     await expect(
       db.query(`update public.${table} set org_id = $1 where id = $2`, [bobOrg, aliceIds[table]]),
-    ).rejects.toThrow(/cannot move to another organisation/);
+    ).rejects.toThrow(
+      APPEND_ONLY.has(table) ? /can't be changed/ : /cannot move to another organisation/,
+    );
   });
 
   it("never allows rows to be deleted", async () => {
@@ -519,10 +525,11 @@ describe.each(BUSINESS_TABLES)("%s: org isolation", (table) => {
       );
       expect(rows.map((row) => row.id)).toContain(aliceIds[table]);
       expect(rows.every((row) => row.org_id === aliceOrg)).toBe(true);
-      const update = await db.query(`update public.${table} set updated_at = now() where id = $1`, [
+      const update = db.query(`update public.${table} set updated_at = now() where id = $1`, [
         aliceIds[table],
       ]);
-      expect(update.affectedRows).toBe(1);
+      if (APPEND_ONLY.has(table)) await expect(update).rejects.toThrow(/permission denied/);
+      else expect((await update).affectedRows).toBe(1);
     });
   });
 });
@@ -2494,17 +2501,24 @@ describe("tenant portal", () => {
           ),
         ),
       ).rejects.toThrow(/row-level security/);
-      const changed = await t.asUser(
-        TINA,
-        async () =>
-          (
-            await db.query(
-              "update public.rent_charges set amount_pence = 1 where tenancy_id = $1",
-              [tina.tenancy],
-            )
-          ).affectedRows,
-      );
-      expect(changed).toBe(0);
+      await expect(
+        t.asUser(TINA, () =>
+          db.query("update public.rent_charges set amount_pence = 1 where tenancy_id = $1", [
+            tina.tenancy,
+          ]),
+        ),
+      ).rejects.toThrow(/permission denied/);
+      await expect(
+        t.asUser(TINA, async () => {
+          const { rows } = await db.query<{ id: string }>(
+            "select id from public.rent_charges where tenancy_id = $1 limit 1",
+            [tina.tenancy],
+          );
+          return db.query("select public.reverse_ledger_entry('charge', $1, 'Not paying')", [
+            rows[0]!.id,
+          ]);
+        }),
+      ).rejects.toThrow(/Only your letting team/);
       await expect(
         t.asUser(TINA, () => db.query("select public.sync_rent_charges($1)", [tom.tenancy])),
       ).rejects.toThrow(/Tenancy not found/);
@@ -2760,7 +2774,7 @@ describe("tenant portal", () => {
       ]);
     });
 
-    it("never charges upcoming tenancies, or a voided period twice", async () => {
+    it("never charges a period again once staff have reversed it", async () => {
       await t.asUser(ALICE, async () => {
         const charge = (
           await db.query<{ id: string }>(
@@ -2769,7 +2783,7 @@ describe("tenant portal", () => {
           )
         ).rows[0]!.id;
         await db.query(
-          "update public.rent_charges set status = 'voided', void_reason = 'Agreed rent-free week', voided_at = now() where id = $1",
+          "select public.reverse_ledger_entry('charge', $1, 'Agreed rent-free week')",
           [charge],
         );
         const added = (

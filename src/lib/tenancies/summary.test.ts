@@ -132,22 +132,43 @@ describe("portalAccess", () => {
 });
 
 describe("tenancy balance", () => {
-  it("counts active charges and payments only", () => {
+  it("works out the balance and arrears from the ledger, leaving out reversed entries", () => {
+    const charge = (id: string, due: string, pence: number, reverses: string | null = null) => ({
+      id,
+      due_date: due,
+      amount_pence: pence,
+      description: reverses ? "Charged by mistake" : `Rent ${due}`,
+      kind: "rent" as const,
+      reverses_charge_id: reverses,
+      created_at: `${due}T09:00:00Z`,
+    });
+    const payment = (id: string, paid: string, pence: number, reverses: string | null = null) => ({
+      id,
+      paid_on: paid,
+      amount_pence: pence,
+      method: "bank_transfer" as const,
+      reference: null,
+      note: reverses ? "Bounced" : null,
+      reverses_payment_id: reverses,
+      created_at: `${paid}T10:00:00Z`,
+    });
     const summary = summariseTenancy(
       row({
         rent_charges: [
-          { amount_pence: 55_000, status: "active" },
-          { amount_pence: 55_000, status: "active" },
-          { amount_pence: 2_000, status: "voided" },
+          charge("sep", "2026-09-01", 55_000),
+          charge("oct", "2026-10-01", 55_000),
+          charge("key", "2026-10-02", 2_000),
+          charge("r1", "2026-10-03", 2_000, "key"),
         ],
         rent_payments: [
-          { amount_pence: 55_000, status: "active" },
-          { amount_pence: 55_000, status: "voided" },
+          payment("p1", "2026-09-01", 55_000),
+          payment("p2", "2026-10-01", 55_000),
+          payment("r2", "2026-10-05", 55_000, "p2"),
         ],
       }),
       TODAY,
     );
-    expect(summary.balancePence).toBe(55_000);
+    expect(summary).toMatchObject({ balancePence: 55_000, arrearsPence: 55_000 });
   });
 
   it("is unknown when the ledger wasn't loaded", () => {

@@ -8,7 +8,7 @@ import {
   type ChargeFormValues,
   type PaymentFormValues,
   recordPayment,
-  voidEntry,
+  reverseEntry,
 } from "@/app/(app)/tenancies/[tenancyId]/rent-actions";
 import {
   Field,
@@ -33,7 +33,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { formatPence } from "@/lib/format";
-import { PAYMENT_METHOD_LABELS, type StatementLine } from "@/lib/rent/statement";
+import { PAYMENT_METHOD_LABELS, type StatementLine } from "@/lib/rent/ledger";
 
 type Run = (action: () => Promise<{ status: string; message: string }>, after?: () => void) => void;
 
@@ -64,7 +64,7 @@ export function StaffStatementTools({
   lines: StatementLine[];
 }) {
   const [run, pending] = useRun();
-  const [voiding, setVoiding] = useState<StatementLine | null>(null);
+  const [reversing, setReversing] = useState<StatementLine | null>(null);
   const [reason, setReason] = useState("");
 
   return (
@@ -86,34 +86,34 @@ export function StaffStatementTools({
               size="xs"
               onClick={() => {
                 setReason("");
-                setVoiding(line);
+                setReversing(line);
               }}
-              aria-label={`${line.type === "charge" ? "Void" : "Reverse"} ${line.type} of ${formatPence(line.chargePence ?? line.paymentPence ?? 0)} on ${line.dateLabel}`}
+              aria-label={`Reverse ${line.kind} of ${formatPence(line.amountPence)} on ${line.dateLabel}`}
             >
-              {line.type === "charge" ? "Void" : "Reverse"}
+              Reverse
             </Button>
           )}
         />
       </section>
 
       <AlertDialog
-        open={voiding !== null}
-        onOpenChange={(open) => (open ? null : setVoiding(null))}
+        open={reversing !== null}
+        onOpenChange={(open) => (open ? null : setReversing(null))}
       >
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>
-              {voiding?.type === "charge" ? "Void this charge?" : "Reverse this payment?"}
+              {reversing?.kind === "charge" ? "Reverse this charge?" : "Reverse this payment?"}
             </AlertDialogTitle>
             <AlertDialogDescription>
-              It stays on the statement, crossed out, and no longer counts towards the balance. The
-              tenant sees your reason in their portal.
+              Nothing is deleted: a reversal for the same amount is added today, and this entry is
+              crossed out. The tenant sees your reason in their portal.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <div className="flex flex-col gap-2">
-            <Label htmlFor="void-reason">Reason</Label>
+            <Label htmlFor="reverse-reason">Reason</Label>
             <Input
-              id="void-reason"
+              id="reverse-reason"
               value={reason}
               onChange={(event) => setReason(event.target.value)}
             />
@@ -124,14 +124,19 @@ export function StaffStatementTools({
               variant="destructive"
               disabled={pending || !reason.trim()}
               onClick={() =>
-                voiding &&
+                reversing &&
                 run(
-                  () => voidEntry({ kind: voiding.type, entryId: voiding.id, reason }),
-                  () => setVoiding(null),
+                  () =>
+                    reverseEntry({
+                      kind: reversing.kind === "charge" ? "charge" : "payment",
+                      entryId: reversing.id,
+                      reason,
+                    }),
+                  () => setReversing(null),
                 )
               }
             >
-              {voiding?.type === "charge" ? "Void charge" : "Reverse payment"}
+              {reversing?.kind === "charge" ? "Reverse charge" : "Reverse payment"}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

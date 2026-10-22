@@ -46,7 +46,6 @@ type SignatureRequestStatus =
   "sent" | "partly_signed" | "completed" | "declined" | "cancelled" | "error";
 type SignerRole = "tenant" | "guarantor" | "organisation";
 type SignerStatus = "awaiting" | "signed" | "declined";
-type LedgerStatus = "active" | "voided";
 type RentChargeKind = "rent" | "other";
 type RentChargeSource = "schedule" | "manual";
 type PaymentMethod = "bank_transfer" | "standing_order" | "card" | "cash" | "other";
@@ -967,10 +966,8 @@ export type Database = {
           due_date: string;
           amount_pence: number;
           description: string;
-          status: LedgerStatus;
-          void_reason: string | null;
-          voided_at: string | null;
-          voided_by: string | null;
+          reverses_charge_id: string | null;
+          created_by: string | null;
           created_at: string;
           updated_at: string;
         };
@@ -985,14 +982,13 @@ export type Database = {
           due_date: string;
           amount_pence: number;
           description: string;
-          status?: LedgerStatus;
-          void_reason?: string | null;
-          voided_at?: string | null;
-          voided_by?: string | null;
+          reverses_charge_id?: string | null;
+          created_by?: string | null;
           created_at?: string;
           updated_at?: string;
         };
-        Update: Partial<Database["public"]["Tables"]["rent_charges"]["Insert"]>;
+        /** Append-only: never updated. A mistake is put right with a reversal. */
+        Update: { [_ in never]: never };
         Relationships: [];
       };
       rent_payments: {
@@ -1004,10 +1000,8 @@ export type Database = {
           amount_pence: number;
           method: PaymentMethod;
           reference: string | null;
-          status: LedgerStatus;
-          void_reason: string | null;
-          voided_at: string | null;
-          voided_by: string | null;
+          reverses_payment_id: string | null;
+          note: string | null;
           recorded_by: string | null;
           created_at: string;
           updated_at: string;
@@ -1020,15 +1014,14 @@ export type Database = {
           amount_pence: number;
           method: PaymentMethod;
           reference?: string | null;
-          status?: LedgerStatus;
-          void_reason?: string | null;
-          voided_at?: string | null;
-          voided_by?: string | null;
+          reverses_payment_id?: string | null;
+          note?: string | null;
           recorded_by?: string | null;
           created_at?: string;
           updated_at?: string;
         };
-        Update: Partial<Database["public"]["Tables"]["rent_payments"]["Insert"]>;
+        /** Append-only: never updated. A mistake is put right with a reversal. */
+        Update: { [_ in never]: never };
         Relationships: [];
       };
       maintenance_requests: {
@@ -1304,6 +1297,11 @@ export type Database = {
       claim_tenant_invite: { Args: { p_token: string }; Returns: undefined };
       tenant_home: { Args: Record<string, never>; Returns: Json };
       sync_rent_charges: { Args: { p_tenancy_id: string }; Returns: number };
+      reverse_ledger_entry: {
+        Args: { p_kind: "charge" | "payment"; p_entry_id: string; p_reason: string };
+        Returns: string;
+      };
+      rent_charges_last_run: { Args: Record<string, never>; Returns: string | null };
       property_activity: {
         Args: { p_property_id: string; p_limit?: number };
         Returns: {
@@ -1345,7 +1343,6 @@ export type Database = {
       signature_request_status: SignatureRequestStatus;
       signer_role: SignerRole;
       signer_status: SignerStatus;
-      ledger_status: LedgerStatus;
       rent_charge_kind: RentChargeKind;
       rent_charge_source: RentChargeSource;
       payment_method: PaymentMethod;

@@ -50,15 +50,15 @@ export const tenantPortalInvites = pgTable(
   ],
 ).enableRLS();
 
-/** Ledger entries are never deleted: a mistake is voided, with a reason. */
-export const ledgerStatus = pgEnum("ledger_status", ["active", "voided"]);
 export const rentChargeKind = pgEnum("rent_charge_kind", ["rent", "other"]);
 export const rentChargeSource = pgEnum("rent_charge_source", ["schedule", "manual"]);
 
 /**
  * What a tenant owes. Rent charges are made from the tenancy's rent and due
- * day by sync_rent_charges, one per period. The balance is never stored:
- * it's always charges minus payments.
+ * day by the daily rent job, one per period. The ledger is append-only: rows
+ * are never edited or deleted, and a mistake is put right by a reversal (a
+ * row pointing at the one it cancels, with the reason as its description).
+ * The balance is never stored: it's always worked out from the ledger.
  */
 export const rentCharges = pgTable(
   "rent_charges",
@@ -73,30 +73,37 @@ export const rentCharges = pgTable(
     dueDate: date("due_date").notNull(),
     amountPence: integer("amount_pence").notNull(),
     description: text("description").notNull(),
-    status: ledgerStatus("status").notNull().default("active"),
-    voidReason: text("void_reason"),
-    voidedAt: timestamp("voided_at", { withTimezone: true }),
-    voidedBy: uuid("voided_by").references(() => users.id, { onDelete: "set null" }),
+    /** Set on a reversal: the charge it cancels. The amount is the same and counts the other way. */
+    reversesChargeId: uuid("reverses_charge_id"),
+    createdBy: uuid("created_by").references(() => users.id, { onDelete: "set null" }),
     ...timestamps,
   },
   (table) => [
     unique("rent_charges_id_org_id_key").on(table.id, table.orgId),
     index("rent_charges_org_id_idx").on(table.orgId),
     index("rent_charges_tenancy_id_idx").on(table.tenancyId),
-    // Each scheduled period is charged once, even if that charge is later voided.
-    uniqueIndex("rent_charges_one_per_period")
+    // For the rent job finding a period's charges. It charges each period once
+    // (holding a lock per tenancy while it works), so this needn't be unique.
+    index("rent_charges_schedule_period_idx")
       .on(table.tenancyId, table.periodStart)
       .where(sql`source = 'schedule'`),
+    // A charge can be reversed only once.
+    uniqueIndex("rent_charges_reversed_once").on(table.reversesChargeId),
     foreignKey({
       name: "rent_charges_tenancy_fk",
       columns: [table.tenancyId, table.orgId],
       foreignColumns: [tenancies.id, tenancies.orgId],
     }).onDelete("restrict"),
+    foreignKey({
+      name: "rent_charges_reverses_fk",
+      columns: [table.reversesChargeId, table.orgId],
+      foreignColumns: [table.id, table.orgId],
+    }).onDelete("restrict"),
     check("rent_charges_amount_positive", sql`amount_pence > 0`),
     check("rent_charges_period_in_order", sql`period_end >= period_start`),
     check(
-      "rent_charges_void_recorded",
-      sql`(status = 'voided') = (void_reason is not null and voided_at is not null)`,
+      "rent_charges_reversal_has_no_period",
+      sql`reverses_charge_id is null or (period_start is null and period_end is null)`,
     ),
   ],
 ).enableRLS();
@@ -109,7 +116,10 @@ export const paymentMethod = pgEnum("payment_method", [
   "other",
 ]);
 
-/** Money received, recorded by staff. Reversed (voided) with a reason, never deleted. */
+/**
+ * Money received, recorded by staff. Append-only like charges: a mistake is
+ * put right by a reversal row, with the reason as its note.
+ */
 export const rentPayments = pgTable(
   "rent_payments",
   {
@@ -120,10 +130,10 @@ export const rentPayments = pgTable(
     amountPence: integer("amount_pence").notNull(),
     method: paymentMethod("method").notNull(),
     reference: text("reference"),
-    status: ledgerStatus("status").notNull().default("active"),
-    voidReason: text("void_reason"),
-    voidedAt: timestamp("voided_at", { withTimezone: true }),
-    voidedBy: uuid("voided_by").references(() => users.id, { onDelete: "set null" }),
+    /** Set on a reversal: the payment it cancels. */
+    reversesPaymentId: uuid("reverses_payment_id"),
+    /** Why a payment was reversed. */
+    note: text("note"),
     recordedBy: uuid("recorded_by").references(() => users.id, { onDelete: "set null" }),
     ...timestamps,
   },
@@ -131,16 +141,24 @@ export const rentPayments = pgTable(
     unique("rent_payments_id_org_id_key").on(table.id, table.orgId),
     index("rent_payments_org_id_idx").on(table.orgId),
     index("rent_payments_tenancy_id_idx").on(table.tenancyId),
+    // A payment can be reversed only once.
+    uniqueIndex("rent_payments_reversed_once").on(table.reversesPaymentId),
     foreignKey({
       name: "rent_payments_tenancy_fk",
       columns: [table.tenancyId, table.orgId],
       foreignColumns: [tenancies.id, tenancies.orgId],
     }).onDelete("restrict"),
+    foreignKey({
+      name: "rent_payments_reverses_fk",
+      columns: [table.reversesPaymentId, table.orgId],
+      foreignColumns: [table.id, table.orgId],
+    }).onDelete("restrict"),
     check("rent_payments_amount_positive", sql`amount_pence > 0`),
     check("rent_payments_reference_length", sql`char_length(reference) <= 100`),
+    check("rent_payments_note_length", sql`char_length(note) <= 300`),
     check(
-      "rent_payments_void_recorded",
-      sql`(status = 'voided') = (void_reason is not null and voided_at is not null)`,
+      "rent_payments_reversal_has_reason",
+      sql`reverses_payment_id is null or char_length(trim(note)) > 0`,
     ),
   ],
 ).enableRLS();

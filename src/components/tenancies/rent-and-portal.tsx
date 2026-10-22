@@ -9,8 +9,8 @@ import { inviteToPortal } from "@/app/(app)/tenancies/[tenancyId]/rent-actions";
 import { Badge } from "@/components/ui/badge";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { formatUkDate } from "@/lib/format";
-import { balanceLabel } from "@/lib/rent/statement";
+import { formatPence, formatUkDate } from "@/lib/format";
+import { balanceLabel } from "@/lib/rent/ledger";
 import type { TenancySummary } from "@/lib/tenancies/summary";
 import { cn } from "@/lib/utils";
 
@@ -40,6 +40,7 @@ export function RentAndPortal({
             data-testid="rent-balance"
           >
             {balanceLabel(tenancy.balancePence)}
+            {tenancy.arrearsPence ? ` · ${formatPence(tenancy.arrearsPence)} overdue` : ""}
           </p>
         ) : (
           <p className="text-sm text-muted-foreground">Rent is charged from the move-in date.</p>

@@ -1,4 +1,5 @@
 import { formatPence, formatUkDate } from "@/lib/format";
+import { buildLedger, type LedgerCharge, type LedgerPayment } from "@/lib/rent/ledger";
 import type { Database } from "@/lib/supabase/database.types";
 import { END_REASON_LABELS } from "@/lib/validation/tenancy";
 import { dueDayLabel, isCurrent, TENANCY_STATUS_LABELS, type TenancyDates } from "./status";
@@ -30,8 +31,8 @@ export type TenancyRow = Pick<
           })
       | null;
   })[];
-  rent_charges?: Pick<Tables["rent_charges"]["Row"], "amount_pence" | "status">[];
-  rent_payments?: Pick<Tables["rent_payments"]["Row"], "amount_pence" | "status">[];
+  rent_charges?: LedgerCharge[];
+  rent_payments?: LedgerPayment[];
   onboardings?: Pick<Tables["onboardings"]["Row"], "id" | "status">[];
   tenancy_guarantors?: GuarantorRow[];
   signature_requests?: SignatureRequestRow[];
@@ -100,6 +101,8 @@ export type TenancySummary = {
   dates: TenancyDates;
   /** Charges minus payments so far, or null when the ledger wasn't loaded. */
   balancePence: number | null;
+  /** What's left on overdue charges, or null when the ledger wasn't loaded. */
+  arrearsPence: number | null;
 };
 
 /** Whether a tenant can use the tenant portal. */
@@ -123,13 +126,9 @@ export function portalAccess(
   return live ? { state: "invited", until: live.expires_at } : { state: "not_invited" };
 }
 
-function balanceOf(row: TenancyRow) {
+function ledgerOf(row: TenancyRow, today: string) {
   if (!row.rent_charges || !row.rent_payments) return null;
-  const sum = (entries: { amount_pence: number; status: string }[]) =>
-    entries
-      .filter((entry) => entry.status === "active")
-      .reduce((total, entry) => total + entry.amount_pence, 0);
-  return sum(row.rent_charges) - sum(row.rent_payments);
+  return buildLedger(row.rent_charges, row.rent_payments, today);
 }
 
 const FREQUENCY_LABELS: Record<string, string> = { monthly: "per month", weekly: "per week" };
@@ -157,6 +156,7 @@ export function summariseTenancy(
   const start = formatUkDate(row.start_date);
   const end = row.end_date ? formatUkDate(row.end_date) : null;
   const group = groupOf(row.status);
+  const ledger = ledgerOf(row, today);
 
   return {
     id: row.id,
@@ -198,6 +198,7 @@ export function summariseTenancy(
       startDate: row.start_date,
       endDate: row.end_date,
     },
-    balancePence: balanceOf(row),
+    balancePence: ledger?.balancePence ?? null,
+    arrearsPence: ledger?.arrearsPence ?? null,
   };
 }

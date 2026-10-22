@@ -79,9 +79,10 @@ export async function addCharge(tenancyId: string, input: unknown): Promise<Acti
     return { status: "error", message: parsed.error.issues[0]?.message ?? CHECK.message };
   if (!id.safeParse(tenancyId).success) return CHECK;
 
-  const membership = await requireMembership();
+  const [membership, user] = await Promise.all([requireMembership(), getCurrentUser()]);
   const supabase = await createClient();
   const { error } = await supabase.from("rent_charges").insert({
+    created_by: user.id,
     org_id: membership.orgId,
     tenancy_id: tenancyId,
     kind: "other",
@@ -94,38 +95,34 @@ export async function addCharge(tenancyId: string, input: unknown): Promise<Acti
   return { status: "success", message: "Charge added." };
 }
 
-const voidSchema = z.object({
+const reverseSchema = z.object({
   kind: z.enum(["charge", "payment"]),
   entryId: z.uuid(),
   reason: z.string().trim().min(1, "Give a reason").max(300, "Use 300 characters or fewer"),
 });
 
-/** Voids a charge or reverses a payment. The entry stays on the statement, crossed out. */
-export async function voidEntry(input: unknown): Promise<ActionResult> {
-  const parsed = voidSchema.safeParse(input);
+/**
+ * Reverses a charge or a payment. Ledger rows are never edited: a reversal
+ * row cancels the entry, which stays on the statement, marked as reversed.
+ */
+export async function reverseEntry(input: unknown): Promise<ActionResult> {
+  const parsed = reverseSchema.safeParse(input);
   if (!parsed.success)
     return { status: "error", message: parsed.error.issues[0]?.message ?? CHECK.message };
-  const [membership, user] = await Promise.all([requireMembership(), getCurrentUser()]);
+  await requireMembership();
   const supabase = await createClient();
-  const table = parsed.data.kind === "charge" ? "rent_charges" : "rent_payments";
-  const { data, error } = await supabase
-    .from(table)
-    .update({
-      status: "voided",
-      void_reason: parsed.data.reason,
-      voided_at: new Date().toISOString(),
-      voided_by: user.id,
-    })
-    .eq("id", parsed.data.entryId)
-    .eq("org_id", membership.orgId)
-    .eq("status", "active")
-    .select("id");
-  if (error || data.length === 0) {
-    return { status: "error", message: "We couldn't change that entry. Refresh and try again." };
+  const { error } = await supabase.rpc("reverse_ledger_entry", {
+    p_kind: parsed.data.kind,
+    p_entry_id: parsed.data.entryId,
+    p_reason: parsed.data.reason,
+  });
+  if (error?.code === "P0001") return { status: "error", message: error.message };
+  if (error) {
+    return { status: "error", message: "We couldn't reverse that entry. Refresh and try again." };
   }
   return {
     status: "success",
-    message: parsed.data.kind === "charge" ? "Charge voided." : "Payment reversed.",
+    message: parsed.data.kind === "charge" ? "Charge reversed." : "Payment reversed.",
   };
 }
 

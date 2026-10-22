@@ -5,6 +5,7 @@ import { z } from "zod";
 import { SectionFallback } from "@/components/properties/section-heading";
 import { RoomTenancies } from "@/components/tenancies/room-tenancies";
 import { requireMembership } from "@/lib/auth/session";
+import { CHARGE_COLUMNS, PAYMENT_COLUMNS } from "@/lib/rent/ledger";
 import { todayInLondon } from "@/lib/format";
 import { getProperty } from "@/lib/properties/queries";
 import { penceToPounds, rentLabel, ROOM_STATUS_LABELS } from "@/lib/properties/rooms";
@@ -36,8 +37,8 @@ const ROOM_COLUMNS = `
     rent_pence, rent_frequency, rent_due_day, deposit_pence,
     tenancy_tenants (status, tenants (id, user_id, first_name, last_name, email, phone,
       tenant_portal_invites (expires_at, used_at, revoked_at))),
-    rent_charges (amount_pence, status),
-    rent_payments (amount_pence, status),
+    rent_charges (${CHARGE_COLUMNS}),
+    rent_payments (${PAYMENT_COLUMNS}),
     onboardings (id, status),
     tenancy_guarantors (id, name, email, phone, address, status, removed_at, removed_reason),
     signature_requests (id, kind, status, provider, provider_request_id, sent_at, completed_at,

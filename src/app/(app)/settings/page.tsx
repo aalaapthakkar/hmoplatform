@@ -34,8 +34,8 @@ export default function SettingsPage() {
               Compliance types
             </CardTitle>
             <CardDescription>
-              The checks, certificates and licences properties need, how long each lasts and when
-              to be reminded.
+              The checks, certificates and licences properties need, how long each lasts and when to
+              be reminded.
             </CardDescription>
           </CardHeader>
         </Card>

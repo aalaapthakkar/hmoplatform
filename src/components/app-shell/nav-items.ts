@@ -27,7 +27,7 @@ export const NAV_ITEMS: NavItem[] = [
   { label: "Onboarding", href: "/applicants", icon: UserPlus },
   { label: "Tenancies", href: "/tenancies", icon: FileText, comingSoon: true },
   { label: "Rent", href: "/rent", icon: PoundSterling },
-  { label: "Compliance", href: "/compliance", icon: ShieldCheck, comingSoon: true },
+  { label: "Compliance", href: "/compliance", icon: ShieldCheck },
   { label: "Maintenance", href: "/maintenance", icon: Wrench, comingSoon: true },
   { label: "Messages", href: "/messages", icon: MessageSquare },
   { label: "Settings", href: "/settings", icon: Settings },

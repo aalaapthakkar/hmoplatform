@@ -12,7 +12,7 @@ import {
 import type { PropertySummary } from "@/lib/properties/summary";
 
 export function PropertyCard({ property }: { property: PropertySummary }) {
-  const overdue = property.expiredDocuments;
+  const overdue = property.overdue;
 
   return (
     <Card

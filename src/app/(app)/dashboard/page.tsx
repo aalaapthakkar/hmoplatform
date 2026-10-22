@@ -4,8 +4,11 @@ import { Suspense } from "react";
 import { ReminderActions } from "@/components/dashboard/reminder-actions";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { requireMembership } from "@/lib/auth/session";
+import { getOrgComplianceItems } from "@/lib/compliance/queries";
+import { RAG_CLASSES, ragCounts } from "@/lib/compliance/status";
 import { formatUkDate, todayInLondon } from "@/lib/format";
 import { createClient } from "@/lib/supabase/server";
+import { cn } from "@/lib/utils";
 import { addDays } from "@/lib/validation/dates";
 
 export const metadata: Metadata = { title: "Dashboard" };
@@ -19,6 +22,10 @@ export default function DashboardPage() {
           <Welcome />
         </Suspense>
       </div>
+
+      <Suspense fallback={<div className="h-24 animate-pulse rounded-xl bg-muted" />}>
+        <ComplianceCard />
+      </Suspense>
 
       <Suspense fallback={<div className="h-32 animate-pulse rounded-xl bg-muted" />}>
         <ComingUp />
@@ -38,12 +45,19 @@ export default function DashboardPage() {
             </CardHeader>
           </Card>
         </Link>
-        <Card>
-          <CardHeader>
-            <CardTitle>Tenancies and rent</CardTitle>
-            <CardDescription>Track who lives where and what they owe. Coming soon.</CardDescription>
-          </CardHeader>
-        </Card>
+        <Link
+          href="/rent"
+          className="rounded-xl outline-none focus-visible:ring-3 focus-visible:ring-ring/50"
+        >
+          <Card className="h-full transition-colors hover:bg-muted/50">
+            <CardHeader>
+              <CardTitle>Rent</CardTitle>
+              <CardDescription>
+                Who&apos;s paid, part paid or behind this month, and log payments.
+              </CardDescription>
+            </CardHeader>
+          </Card>
+        </Link>
       </div>
     </div>
   );
@@ -55,6 +69,44 @@ async function Welcome() {
     <p className="text-muted-foreground">
       Welcome to {membership.orgName}. Here&apos;s where your day-to-day work will live.
     </p>
+  );
+}
+
+/** Red and amber compliance across every property, linking to the dashboard. */
+async function ComplianceCard() {
+  const membership = await requireMembership();
+  const counts = ragCounts(await getOrgComplianceItems(membership.orgId));
+  return (
+    <Card data-testid="compliance-card">
+      <CardHeader>
+        <CardTitle>
+          <Link href="/compliance" className="underline-offset-4 hover:underline">
+            Compliance
+          </Link>
+        </CardTitle>
+        <CardDescription>Certificates, checks and licences across your properties.</CardDescription>
+      </CardHeader>
+      <CardContent className="flex flex-wrap gap-2">
+        <Link
+          href="/compliance?rag=red"
+          className={cn("rounded-md px-3 py-1.5 text-sm font-medium", RAG_CLASSES.red)}
+        >
+          {counts.red} overdue or missing
+        </Link>
+        <Link
+          href="/compliance?rag=amber"
+          className={cn("rounded-md px-3 py-1.5 text-sm font-medium", RAG_CLASSES.amber)}
+        >
+          {counts.amber} due soon
+        </Link>
+        <Link
+          href="/compliance?rag=green"
+          className={cn("rounded-md px-3 py-1.5 text-sm font-medium", RAG_CLASSES.green)}
+        >
+          {counts.green} OK
+        </Link>
+      </CardContent>
+    </Card>
   );
 }
 

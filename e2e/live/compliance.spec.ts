@@ -103,6 +103,28 @@ test("a property's compliance: record checks, certificates, details and what isn
   await item(page, "boiler_service").getByRole("button", { name: "Needed again" }).click();
   await expect(item(page, "boiler_service").getByTestId("compliance-status")).toHaveText("Missing");
 
+  // The org-wide dashboard, narrowed to this property.
+  const propertyId = propertyUrl.split("/").at(-1)!;
+  await page.goto(`/compliance?property=${propertyId}`);
+  await expect(page.getByTestId("total-amber")).toHaveText("1");
+  await expect(page.getByTestId("total-green")).toHaveText("2");
+  if (test.info().project.name === "chromium") {
+    const row = page.getByTestId("compliance-row");
+    await expect(row).toHaveCount(1);
+    await expect(row.locator('[data-status="due_soon"]')).toHaveCount(1);
+  }
+  await page
+    .getByRole("navigation", { name: "Status" })
+    .getByRole("link", { name: "Due soon" })
+    .click();
+  await expect(page).toHaveURL(/rag=amber/);
+  const csv = await page.request.get(`/compliance/export?property=${propertyId}`);
+  expect(csv.ok()).toBe(true);
+  const text = await csv.text();
+  expect(text).toContain('"HMO licence"');
+  expect(text).toContain("Licence number: HMO/2026/0042");
+  await page.goto(propertyUrl);
+
   // It's all in the property's history.
   await page
     .getByRole("navigation", { name: "Property sections" })

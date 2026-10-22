@@ -29,8 +29,7 @@ const PROPERTY_DETAIL_COLUMNS = `
   id, address_line_1, address_line_2, town, postcode, tags, status, letting_type,
   council, property_type, bedrooms, ownership_type, head_rent_pence,
   description, amenities, house_rules, bills_included, welcome_pack,
-  rooms (status, documents (expiry_date, status)),
-  documents (expiry_date, status)
+  rooms (status)
 `;
 
 /**

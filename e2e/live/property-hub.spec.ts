@@ -90,7 +90,11 @@ test("the property hub manages rooms, ownership, details and documents, with a h
     "Linked as owner",
   );
 
-  // The sections still to come are clearly labelled.
+  // The expired EICR uploaded above counts as the property's EICR, overdue.
   await sections.getByRole("link", { name: /Compliance/ }).click();
-  await expect(page.getByText("Coming soon")).toBeVisible();
+  await expect(
+    page
+      .locator('[data-testid="compliance-item"][data-type="eicr"]')
+      .getByTestId("compliance-status"),
+  ).toHaveText("Overdue");
 });

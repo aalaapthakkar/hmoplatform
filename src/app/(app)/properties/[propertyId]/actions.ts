@@ -154,7 +154,11 @@ export async function updateDetails(propertyId: string, input: unknown): Promise
  * be inside this property's folder in the user's organisation, and the file
  * must really be there.
  */
-export async function recordDocument(propertyId: string, input: unknown): Promise<ActionResult> {
+export async function recordDocument(
+  propertyId: string,
+  input: unknown,
+  { updateCompliance = true }: { updateCompliance?: boolean } = {},
+): Promise<ActionResult> {
   const parsed = recordDocumentSchema.safeParse(input);
   if (!parsed.success || !id.safeParse(propertyId).success) return CHECK_AGAIN;
 
@@ -190,6 +194,9 @@ export async function recordDocument(propertyId: string, input: unknown): Promis
     .single();
   if (error) return error.code === "23503" ? PROPERTY_NOT_FOUND : TRY_AGAIN;
 
+  if (updateCompliance && expiryDate) {
+    await updateComplianceFromCertificate(propertyId, documentType, data.id, expiryDate);
+  }
   return { status: "success", message: `${fileName} uploaded.`, id: data.id };
 }
 
@@ -257,4 +264,55 @@ export async function serveDocument(propertyId: string, input: unknown): Promise
   }
   if (error) return TRY_AGAIN;
   return { status: "success", message: "Document given. It's in their portal now." };
+}
+
+/** Certificates whose upload also counts as the property's compliance check. */
+const CERTIFICATE_SERVICE_KEYS: Partial<Record<string, string>> = {
+  gas_safety: "gas_safety",
+  eicr: "eicr",
+  epc: "epc",
+  hmo_licence: "hmo_licence",
+};
+
+/**
+ * A gas safety certificate, EICR, EPC or HMO licence uploaded in Documents
+ * also updates the matching compliance item, if it expires later than what's
+ * recorded, so the two never disagree.
+ */
+async function updateComplianceFromCertificate(
+  propertyId: string,
+  documentType: string,
+  documentId: string,
+  expiryDate: string,
+) {
+  const systemKey = CERTIFICATE_SERVICE_KEYS[documentType];
+  if (!systemKey) return;
+  const [membership, user] = await Promise.all([requireMembership(), getCurrentUser()]);
+  const supabase = await createClient();
+  const { data: type } = await supabase
+    .from("service_types")
+    .select("id")
+    .eq("org_id", membership.orgId)
+    .eq("system_key", systemKey)
+    .eq("status", "active")
+    .maybeSingle();
+  if (!type) return;
+  const { data: current } = await supabase
+    .from("property_services")
+    .select("expires_on")
+    .eq("property_id", propertyId)
+    .eq("service_type_id", type.id)
+    .maybeSingle();
+  if (current?.expires_on && current.expires_on >= expiryDate) return;
+  await supabase.from("property_services").upsert(
+    {
+      org_id: membership.orgId,
+      property_id: propertyId,
+      service_type_id: type.id,
+      expires_on: expiryDate,
+      document_id: documentId,
+      updated_by: user.id,
+    },
+    { onConflict: "property_id,service_type_id" },
+  );
 }

@@ -2,9 +2,8 @@ import { z } from "zod";
 import type { Database } from "@/lib/supabase/database.types";
 
 type Tables = Database["public"]["Tables"];
-type DocumentDates = Pick<Tables["documents"]["Row"], "expiry_date" | "status">;
 
-/** The shape the Properties page selects: each property with its rooms and documents. */
+/** The shape the Properties page selects: each property with its rooms. */
 export type PropertyListRow = Pick<
   Tables["properties"]["Row"],
   | "id"
@@ -16,8 +15,7 @@ export type PropertyListRow = Pick<
   | "status"
   | "letting_type"
 > & {
-  rooms: (Pick<Tables["rooms"]["Row"], "status"> & { documents: DocumentDates[] })[];
-  documents: DocumentDates[];
+  rooms: Pick<Tables["rooms"]["Row"], "status">[];
 };
 
 export type PropertySummary = {
@@ -28,16 +26,9 @@ export type PropertySummary = {
   tags: string[];
   active: boolean;
   occupancy: string;
-  /** Active certificates and documents, on the property or its rooms, past their expiry date. */
-  expiredDocuments: number;
+  /** Compliance items (certificates, checks, licences) past their expiry date. */
+  overdue: number;
 };
-
-/** A document has expired once its expiry date is before today (London). */
-function isExpired(document: DocumentDates, today: string) {
-  return (
-    document.status === "active" && document.expiry_date !== null && document.expiry_date < today
-  );
-}
 
 function occupancyLabel(lettingType: PropertyListRow["letting_type"], let_: number, total: number) {
   if (total === 0) return "No rooms yet";
@@ -45,12 +36,14 @@ function occupancyLabel(lettingType: PropertyListRow["letting_type"], let_: numb
   return `${let_} of ${total} ${total === 1 ? "room" : "rooms"} let`;
 }
 
-/** Works out what a property card shows. `today` is "YYYY-MM-DD" in Europe/London. */
-export function summariseProperty(row: PropertyListRow, today: string): PropertySummary {
+/**
+ * Works out what a property card shows. `overdue` comes from the
+ * compliance_items view, which works out what has expired.
+ */
+export function summariseProperty(row: PropertyListRow, overdue: number): PropertySummary {
   // Archived rooms are gone for good, so they count towards nothing.
   const rooms = row.rooms.filter((room) => room.status !== "archived");
   const letRooms = rooms.filter((room) => room.status === "let").length;
-  const documents = [...row.documents, ...rooms.flatMap((room) => room.documents)];
 
   return {
     id: row.id,
@@ -59,7 +52,7 @@ export function summariseProperty(row: PropertyListRow, today: string): Property
     tags: row.tags,
     active: row.status === "active",
     occupancy: occupancyLabel(row.letting_type, letRooms, rooms.length),
-    expiredDocuments: documents.filter((document) => isExpired(document, today)).length,
+    overdue,
   };
 }
 

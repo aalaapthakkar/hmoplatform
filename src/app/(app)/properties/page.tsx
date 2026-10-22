@@ -6,7 +6,7 @@ import { PropertyCard } from "@/components/properties/property-card";
 import { PropertyFiltersBar } from "@/components/properties/property-filters";
 import { buttonVariants } from "@/components/ui/button";
 import { requireMembership } from "@/lib/auth/session";
-import { todayInLondon } from "@/lib/format";
+import { overdueCounts } from "@/lib/compliance/queries";
 import {
   allTags,
   groupProperties,
@@ -38,8 +38,7 @@ export default function PropertiesPage({ searchParams }: PageProps<"/properties"
 
 const PROPERTY_LIST_COLUMNS = `
   id, address_line_1, address_line_2, town, postcode, tags, status, letting_type,
-  rooms (status, documents (expiry_date, status)),
-  documents (expiry_date, status)
+  rooms (status)
 `;
 
 async function PropertiesList({ searchParams }: Pick<PageProps<"/properties">, "searchParams">) {
@@ -47,17 +46,19 @@ async function PropertiesList({ searchParams }: Pick<PageProps<"/properties">, "
   const filters = parsePropertyFilters(params);
 
   const supabase = await createClient();
-  const { data, error } = await supabase
-    .from("properties")
-    .select(PROPERTY_LIST_COLUMNS)
-    .eq("org_id", membership.orgId)
-    .order("address_line_1")
-    .overrideTypes<PropertyListRow[], { merge: false }>();
+  const [{ data, error }, overdue] = await Promise.all([
+    supabase
+      .from("properties")
+      .select(PROPERTY_LIST_COLUMNS)
+      .eq("org_id", membership.orgId)
+      .order("address_line_1")
+      .overrideTypes<PropertyListRow[], { merge: false }>(),
+    overdueCounts(membership.orgId),
+  ]);
 
   if (error) throw new Error("Could not load properties", { cause: error.code });
 
-  const today = todayInLondon();
-  const properties = data.map((row) => summariseProperty(row, today));
+  const properties = data.map((row) => summariseProperty(row, overdue.get(row.id) ?? 0));
 
   if (properties.length === 0) {
     return (

@@ -3,7 +3,8 @@ import Link from "next/link";
 import { Suspense } from "react";
 import { PropertySectionNav } from "@/components/properties/property-section-nav";
 import { Badge } from "@/components/ui/badge";
-import { todayInLondon } from "@/lib/format";
+import { requireMembership } from "@/lib/auth/session";
+import { overdueCounts } from "@/lib/compliance/queries";
 import { getProperty } from "@/lib/properties/queries";
 import { summariseProperty } from "@/lib/properties/summary";
 
@@ -38,18 +39,22 @@ type Params = Pick<LayoutProps<"/properties/[propertyId]">, "params">;
 async function PropertyHeader({ params }: Params) {
   const { propertyId } = await params;
   const property = await getProperty(propertyId);
-  const summary = summariseProperty(property, todayInLondon());
+  const membership = await requireMembership();
+  const overdue = await overdueCounts(membership.orgId, propertyId);
+  const summary = summariseProperty(property, overdue.get(propertyId) ?? 0);
 
   return (
     <header className="flex flex-col gap-1">
       <div className="flex flex-wrap items-center gap-2">
         <h1 className="text-2xl font-semibold tracking-tight">{summary.addressLine1}</h1>
         {summary.active ? null : <Badge variant="outline">Inactive</Badge>}
-        {summary.expiredDocuments > 0 ? (
-          <Badge className="bg-destructive text-white">
-            {summary.expiredDocuments} overdue
-            <span className="sr-only">: expired certificates</span>
-          </Badge>
+        {summary.overdue > 0 ? (
+          <Link href={`/properties/${propertyId}/compliance`}>
+            <Badge className="bg-destructive text-white">
+              {summary.overdue} overdue
+              <span className="sr-only">: expired certificates or checks</span>
+            </Badge>
+          </Link>
         ) : null}
       </div>
       <p className="text-muted-foreground">{summary.locality}</p>

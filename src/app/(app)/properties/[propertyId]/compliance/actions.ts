@@ -106,12 +106,17 @@ export async function recordCheck(
 
   let documentId: string | undefined;
   if (upload) {
-    const recorded = await recordDocument(propertyId, {
-      path: upload.path,
-      fileName: upload.fileName,
-      documentType: type.document_type,
-      expiryDate: expiresOn,
-    });
+    const recorded = await recordDocument(
+      propertyId,
+      {
+        path: upload.path,
+        fileName: upload.fileName,
+        documentType: type.document_type,
+        expiryDate: expiresOn,
+      },
+      // The check itself is saved below, with its own type.
+      { updateCompliance: false },
+    );
     if (recorded.status === "error" || !recorded.id) {
       return { status: "error", message: recorded.message };
     }

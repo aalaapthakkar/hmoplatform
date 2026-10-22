@@ -1,5 +1,6 @@
 import "server-only";
 import { todayInLondon } from "@/lib/format";
+import { readAll } from "@/lib/supabase/read-all";
 import { createClient } from "@/lib/supabase/server";
 import {
   buildLedger,
@@ -9,21 +10,6 @@ import {
   type LedgerPayment,
   PAYMENT_COLUMNS,
 } from "./ledger";
-
-/** Supabase returns at most 1,000 rows a request, so big ledgers are read in pages. */
-const PAGE = 1000;
-
-async function readAll<T>(
-  page: (from: number, to: number) => PromiseLike<{ data: T[] | null; error: unknown }>,
-) {
-  const rows: T[] = [];
-  for (let from = 0; ; from += PAGE) {
-    const { data, error } = await page(from, from + PAGE - 1);
-    if (error) throw error;
-    rows.push(...(data ?? []));
-    if (!data || data.length < PAGE) return rows;
-  }
-}
 
 type TenancyRow = {
   id: string;

@@ -9,8 +9,6 @@ import {
   summariseProperty,
 } from "./summary";
 
-const TODAY = "2026-10-21";
-
 function row(overrides: Partial<PropertyListRow> = {}): PropertyListRow {
   return {
     id: "p1",
@@ -22,15 +20,11 @@ function row(overrides: Partial<PropertyListRow> = {}): PropertyListRow {
     status: "active",
     letting_type: "house_share",
     rooms: [],
-    documents: [],
     ...overrides,
   };
 }
 
-const room = (status: PropertyListRow["rooms"][number]["status"], documents = []) => ({
-  status,
-  documents,
-});
+const room = (status: PropertyListRow["rooms"][number]["status"]) => ({ status });
 
 describe("summariseProperty", () => {
   it("counts let rooms out of all rooms that aren't archived", () => {
@@ -46,64 +40,46 @@ describe("summariseProperty", () => {
           room("archived"),
         ],
       }),
-      TODAY,
+      0,
     );
     expect(summary.occupancy).toBe("5 of 6 rooms let");
   });
 
   it("counts unavailable rooms as not let", () => {
-    expect(
-      summariseProperty(row({ rooms: [room("let"), room("unavailable")] }), TODAY).occupancy,
-    ).toBe("1 of 2 rooms let");
+    expect(summariseProperty(row({ rooms: [room("let"), room("unavailable")] }), 0).occupancy).toBe(
+      "1 of 2 rooms let",
+    );
   });
 
   it("says 'room' for a single room", () => {
-    expect(summariseProperty(row({ rooms: [room("available")] }), TODAY).occupancy).toBe(
+    expect(summariseProperty(row({ rooms: [room("available")] }), 0).occupancy).toBe(
       "0 of 1 room let",
     );
   });
 
   it("shows a single let as Let or Vacant", () => {
     const singleLet = (status: "let" | "available") =>
-      summariseProperty(row({ letting_type: "single_let", rooms: [room(status)] }), TODAY)
-        .occupancy;
+      summariseProperty(row({ letting_type: "single_let", rooms: [room(status)] }), 0).occupancy;
     expect(singleLet("let")).toBe("Let");
     expect(singleLet("available")).toBe("Vacant");
   });
 
   it("handles a property with no rooms", () => {
-    expect(summariseProperty(row(), TODAY).occupancy).toBe("No rooms yet");
+    expect(summariseProperty(row(), 0).occupancy).toBe("No rooms yet");
   });
 
   it("joins the second line, town and postcode", () => {
-    expect(summariseProperty(row(), TODAY).locality).toBe("Fallowfield, Manchester M14 6PZ");
-    expect(summariseProperty(row({ address_line_2: null }), TODAY).locality).toBe(
-      "Manchester M14 6PZ",
-    );
+    expect(summariseProperty(row(), 0).locality).toBe("Fallowfield, Manchester M14 6PZ");
+    expect(summariseProperty(row({ address_line_2: null }), 0).locality).toBe("Manchester M14 6PZ");
   });
 
-  it("counts active documents that expired before today, on the property and its rooms", () => {
-    const summary = summariseProperty(
-      row({
-        documents: [
-          { expiry_date: "2026-10-20", status: "active" }, // expired yesterday
-          { expiry_date: TODAY, status: "active" }, // still valid today
-          { expiry_date: "2025-01-01", status: "archived" }, // replaced, so ignored
-          { expiry_date: null, status: "active" }, // never expires
-        ],
-        rooms: [
-          { status: "let", documents: [{ expiry_date: "2026-01-01", status: "active" }] },
-          { status: "archived", documents: [{ expiry_date: "2026-01-01", status: "active" }] },
-        ],
-      }),
-      TODAY,
-    );
-    expect(summary.expiredDocuments).toBe(2);
+  it("carries the overdue compliance count", () => {
+    expect(summariseProperty(row(), 3).overdue).toBe(3);
   });
 });
 
 function summary(id: string, tags: string[], active = true): PropertySummary {
-  return { id, addressLine1: id, locality: "", tags, active, occupancy: "", expiredDocuments: 0 };
+  return { id, addressLine1: id, locality: "", tags, active, occupancy: "", overdue: 0 };
 }
 
 describe("groupProperties", () => {

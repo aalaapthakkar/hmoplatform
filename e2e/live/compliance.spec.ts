@@ -201,3 +201,66 @@ test("each person chooses reminder emails, and sees what they cover", async ({ p
   await toggle.click();
   await expect(toggle).toBeChecked({ checked: wasOn });
 });
+
+test("a certificate is served to every tenant, with a record of how it went", async ({ page }) => {
+  test.skip(test.info().project.name !== "chromium", "Serving is the same on a phone.");
+  test.setTimeout(240_000);
+  const address = uniqueAddress("Serving Street");
+  await addHouseShare(page, address, 2);
+  const propertyUrl = (await page.getByRole("link", { name: address }).getAttribute("href"))!;
+
+  // Two tenants: one with an email address, one without.
+  for (const [room, first, email] of [
+    [1, "Sami", `sami.${Date.now()}@hmo-platform-e2e.test`],
+    [2, "Noel", ""],
+  ] as const) {
+    await page.goto(propertyUrl);
+    await page.getByRole("link", { name: `Tenancies for Room ${room}` }).click();
+    await page.getByRole("button", { name: "Add tenancy" }).click();
+    const form = page.getByRole("dialog");
+    await form.getByLabel("First name").fill(first);
+    await form.getByLabel("Last name").fill("Served");
+    if (email) await form.getByLabel("Email (optional)").fill(email);
+    await form.getByLabel("Start date").fill(londonDate());
+    await form.getByLabel("Rent per month").fill("500");
+    await form.getByRole("button", { name: "Add tenancy" }).click();
+    await expect(page.getByText(new RegExp(`^Tenancy for ${first} Served added`))).toBeVisible();
+  }
+
+  // Record the gas certificate, then serve it.
+  await page.goto(`${propertyUrl}/compliance`);
+  const sheet = await openRecord(page, "gas_safety");
+  await sheet.getByLabel("Done on").fill(londonDate(-2));
+  await sheet
+    .getByLabel("Certificate", { exact: true })
+    .setInputFiles({ name: "cp12.pdf", mimeType: "application/pdf", buffer: PDF });
+  await save(page, "Gas safety certificate");
+
+  await item(page, "gas_safety")
+    .getByRole("button", { name: "Serve Gas safety certificate to tenants" })
+    .click();
+  const serve = page.getByRole("dialog");
+  await expect(serve).toContainText("Sami Served");
+  await expect(serve).toContainText("No email: portal only");
+  await expect(serve.getByLabel("Subject")).toHaveValue(
+    `Your gas safety certificate for ${address}`,
+  );
+  await serve.getByRole("button", { name: "Send to 2 tenants" }).click();
+  await expect(page.getByText("Served to 2 tenants: 1 emailed, 1 portal only.")).toBeVisible();
+
+  // The record says who got it and how.
+  const history = item(page, "gas_safety").getByTestId("service-history");
+  await history.getByText("Served 1 time").click();
+  await expect(history.getByTestId("service-recipient")).toHaveText([
+    /^Noel Served: In their portal \(no email\)$/,
+    /^Sami Served \(sami\..*\): Emailed and in their portal$/,
+  ]);
+  const csv = await page.request.get(`${propertyUrl}/compliance/served`);
+  expect(await csv.text()).toContain('"Sami Served"');
+
+  // And it's in the activity history.
+  await page.goto(`${propertyUrl}/activity`);
+  await expect(
+    page.getByTestId("activity-entry").filter({ hasText: "Served to tenants" }),
+  ).toHaveCount(1);
+});

@@ -35,7 +35,10 @@ import {
 } from "@/components/ui/sheet";
 import { Textarea } from "@/components/ui/textarea";
 import { useMediaQuery } from "@/hooks/use-media-query";
+import { ServeCertificate, ServiceHistory } from "@/components/compliance/serve-certificate";
 import { detailsToForm, formatDetail, type ServiceField } from "@/lib/compliance/fields";
+import type { ServiceRecord } from "@/lib/compliance/queries";
+import type { ServeRecipient } from "@/lib/compliance/serving";
 import {
   CATEGORIES,
   CATEGORY_LABELS,
@@ -66,6 +69,12 @@ export type PropertyComplianceProps = {
   fieldsByType: Record<string, ServiceField[]>;
   /** Certificate file names, by document id. */
   documentNames: Record<string, string>;
+  /** "12 High Street", for the message to tenants. */
+  address: string;
+  /** Tenants certificates can be served to. */
+  recipients: ServeRecipient[];
+  /** Every time a certificate was served here. */
+  records: ServiceRecord[];
 };
 
 export function StatusBadge({ status }: { status: ComplianceItem["status"] }) {
@@ -84,6 +93,9 @@ export function PropertyCompliance({
   items,
   fieldsByType,
   documentNames,
+  address,
+  recipients,
+  records,
 }: PropertyComplianceProps) {
   const router = useRouter();
   const wide = useMediaQuery("(min-width: 768px)");
@@ -134,6 +146,14 @@ export function PropertyCompliance({
                       setNotNeeded(item);
                     }}
                     onNeeded={() => run(() => markNeeded(propertyId, item.service_type_id))}
+                    address={address}
+                    recipients={recipients}
+                    records={records.filter(
+                      (record) =>
+                        (item.property_service_id &&
+                          record.propertyServiceId === item.property_service_id) ||
+                        (item.document_id && record.documentId === item.document_id),
+                    )}
                   />
                 ))}
             </div>
@@ -224,6 +244,9 @@ function ItemCard({
   onRecord,
   onNotNeeded,
   onNeeded,
+  address,
+  recipients,
+  records,
 }: {
   item: ComplianceItem;
   propertyId: string;
@@ -233,6 +256,9 @@ function ItemCard({
   onRecord: () => void;
   onNotNeeded: () => void;
   onNeeded: () => void;
+  address: string;
+  recipients: ServeRecipient[];
+  records: ServiceRecord[];
 }) {
   const details = fields
     .map((field) => ({ field, value: formatDetail(field, item.details[field.key]) }))
@@ -298,6 +324,7 @@ function ItemCard({
         {item.notes && !item.not_required ? (
           <p className="text-sm whitespace-pre-line text-muted-foreground">{item.notes}</p>
         ) : null}
+        <ServiceHistory propertyId={propertyId} records={records} />
 
         <div className="flex flex-wrap gap-2 border-t pt-3">
           {item.not_required ? (
@@ -317,6 +344,17 @@ function ItemCard({
               >
                 Not needed here
               </Button>
+              {item.document_id && documentName ? (
+                <ServeCertificate
+                  propertyId={propertyId}
+                  propertyServiceId={item.property_service_id}
+                  documentId={item.document_id}
+                  certificateName={item.service_name}
+                  fileName={documentName}
+                  address={address}
+                  recipients={recipients}
+                />
+              ) : null}
             </>
           )}
         </div>

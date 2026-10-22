@@ -5,9 +5,13 @@ import { type ActionResult, recordDocument } from "@/app/(app)/properties/[prope
 import { getCurrentUser, requireMembership } from "@/lib/auth/session";
 import { parseDetails, type ServiceField } from "@/lib/compliance/fields";
 import { expiryFrom } from "@/lib/compliance/status";
+import { getServeRecipients } from "@/lib/compliance/queries";
+import { serveEmail } from "@/lib/compliance/serving";
+import { EmailFailed, EmailNotConfigured, type EmailProvider, getEmailProvider } from "@/lib/email";
 import { todayInLondon } from "@/lib/format";
 import { createClient } from "@/lib/supabase/server";
 import { optionalDateField } from "@/lib/validation/dates";
+import { DOCUMENTS_BUCKET } from "@/lib/validation/document";
 
 const id = z.uuid();
 
@@ -197,4 +201,175 @@ export async function markNeeded(propertyId: string, serviceTypeId: string): Pro
     .eq("service_type_id", serviceTypeId);
   if (error) return { status: "error", message: "We couldn't save that. Please try again." };
   return { status: "success", message: "It's needed here again." };
+}
+
+const serveSchema = z.object({
+  documentId: z.uuid(),
+  propertyServiceId: z.uuid().nullable(),
+  /** "tenancyId:tenantId" for each chosen tenant. */
+  recipients: z
+    .array(z.string().regex(/^[0-9a-f-]{36}:[0-9a-f-]{36}$/i))
+    .min(1, "Choose who to send it to"),
+  subject: z.string().trim().min(1, "Add a subject").max(200, "Use 200 characters or fewer"),
+  message: z.string().trim().min(1, "Add a message").max(4000, "Use 4,000 characters or fewer"),
+});
+
+/**
+ * Serves a certificate to tenants: it goes into each tenancy's portal and is
+ * emailed, attached, to every chosen tenant with an email address. Who it
+ * went to, how, and whether each email got out, is recorded for good.
+ */
+export async function serveCertificate(propertyId: string, input: unknown): Promise<ActionResult> {
+  if (!id.safeParse(propertyId).success) {
+    return { status: "error", message: "Refresh the page and try again." };
+  }
+  const parsed = serveSchema.safeParse(input);
+  if (!parsed.success) {
+    return { status: "error", message: parsed.error.issues[0]?.message ?? "Check the details." };
+  }
+  const { documentId, propertyServiceId, subject, message } = parsed.data;
+  const [membership, user] = await Promise.all([requireMembership(), getCurrentUser()]);
+  const supabase = await createClient();
+
+  const { data: document } = await supabase
+    .from("documents")
+    .select("id, file_path, file_name")
+    .eq("id", documentId)
+    .eq("property_id", propertyId)
+    .eq("status", "active")
+    .maybeSingle();
+  if (!document) return { status: "error", message: "We couldn't find that certificate." };
+
+  const chosen = new Set(parsed.data.recipients);
+  const recipients = (await getServeRecipients(propertyId)).filter((recipient) =>
+    chosen.has(`${recipient.tenancyId}:${recipient.tenantId}`),
+  );
+  if (recipients.length === 0) {
+    return { status: "error", message: "None of those tenants are at this property now." };
+  }
+
+  // The file, read through the staff member's own session.
+  const emailing = recipients.some((recipient) => recipient.email);
+  let attachment: Uint8Array | null = null;
+  let provider: EmailProvider | null = null;
+  let emailProblem: string | null = null;
+  if (emailing) {
+    try {
+      provider = getEmailProvider();
+    } catch (error) {
+      if (!(error instanceof EmailNotConfigured)) throw error;
+      emailProblem = "Email isn't set up yet";
+    }
+    if (provider) {
+      const { data: file } = await supabase.storage
+        .from(DOCUMENTS_BUCKET)
+        .download(document.file_path);
+      if (!file)
+        return { status: "error", message: "We couldn't open that certificate. Please try again." };
+      attachment = new Uint8Array(await file.arrayBuffer());
+    }
+  }
+
+  const { data: service, error: serviceError } = await supabase
+    .from("certificate_services")
+    .insert({
+      org_id: membership.orgId,
+      property_id: propertyId,
+      document_id: document.id,
+      property_service_id: propertyServiceId,
+      subject,
+      message,
+      sent_by: user.id,
+    })
+    .select("id")
+    .single();
+  if (serviceError) return { status: "error", message: "We couldn't send that. Please try again." };
+
+  // Into each tenancy's portal.
+  const tenancyIds = [...new Set(recipients.map((recipient) => recipient.tenancyId))];
+  const { error: portalError } = await supabase.from("document_services").upsert(
+    tenancyIds.map((tenancyId) => ({
+      org_id: membership.orgId,
+      document_id: document.id,
+      tenancy_id: tenancyId,
+      method: "portal" as const,
+      served_by: user.id,
+    })),
+    { onConflict: "document_id,tenancy_id", ignoreDuplicates: true },
+  );
+  if (portalError)
+    return { status: "error", message: "We couldn't add it to the portal. Please try again." };
+
+  // One email each, recording every result.
+  const rows = [];
+  for (const recipient of recipients) {
+    const base = {
+      org_id: membership.orgId,
+      certificate_service_id: service.id,
+      tenant_id: recipient.tenantId,
+      tenancy_id: recipient.tenancyId,
+      name: recipient.name,
+      email: recipient.email,
+    };
+    if (!recipient.email) {
+      rows.push({ ...base, channel: "portal" as const, email_status: "no_email" as const });
+      continue;
+    }
+    if (!provider || !attachment) {
+      rows.push({
+        ...base,
+        channel: "email_and_portal" as const,
+        email_status: "failed" as const,
+        error: emailProblem ?? "Couldn't send the email",
+      });
+      continue;
+    }
+    try {
+      const { id: messageId } = await provider.send({
+        to: recipient.email,
+        subject,
+        ...serveEmail({
+          firstName: recipient.firstName,
+          message,
+          organisation: membership.orgName,
+        }),
+        replyTo: user.email ?? undefined,
+        attachments: [{ filename: document.file_name, content: attachment }],
+      });
+      rows.push({
+        ...base,
+        channel: "email_and_portal" as const,
+        email_status: "sent" as const,
+        provider_message_id: messageId,
+      });
+    } catch (error) {
+      if (!(error instanceof EmailFailed)) throw error;
+      rows.push({
+        ...base,
+        channel: "email_and_portal" as const,
+        email_status: "failed" as const,
+        error: error.message.slice(0, 200),
+      });
+    }
+  }
+  const { error: recordError } = await supabase.from("certificate_service_recipients").insert(rows);
+  if (recordError) {
+    return {
+      status: "error",
+      message: "It was sent, but we couldn't save the record. Contact support.",
+    };
+  }
+
+  const emailed = rows.filter((row) => row.email_status === "sent").length;
+  const failed = rows.filter((row) => row.email_status === "failed").length;
+  const portalOnly = rows.filter((row) => row.email_status === "no_email").length;
+  const parts = [
+    emailed ? `${emailed} emailed` : null,
+    portalOnly ? `${portalOnly} portal only` : null,
+    failed ? `${failed} email${failed === 1 ? "" : "s"} failed (it's in their portal)` : null,
+  ].filter(Boolean);
+  return {
+    status: failed ? "error" : "success",
+    message: `Served to ${rows.length} ${rows.length === 1 ? "tenant" : "tenants"}: ${parts.join(", ")}.`,
+  };
 }
